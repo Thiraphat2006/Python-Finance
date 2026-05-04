@@ -3,7 +3,7 @@ import pandas as pd
 import pandas_ta as pdt
 
 
-def movingAvg(symbol: str, timeFrame=mt5.TIMEFRAME_H1) -> pd.DataFrame | None:
+def movingAvg(symbol: str, timeFrame=mt5.TIMEFRAME_H1) -> pd.DataFrame | str:
 
     if not mt5.initialize():  # type: ignore
         print("Initialize failed")
@@ -11,8 +11,7 @@ def movingAvg(symbol: str, timeFrame=mt5.TIMEFRAME_H1) -> pd.DataFrame | None:
 
     rates = mt5.copy_rates_from_pos(symbol, timeFrame, 0, 1000)  # type: ignore
     if rates is None:
-        print("No data")
-        return None
+        return "No data returned from MetaTrader5"
 
     df = pd.DataFrame(rates)
 
@@ -22,7 +21,3 @@ def movingAvg(symbol: str, timeFrame=mt5.TIMEFRAME_H1) -> pd.DataFrame | None:
     df["VWMA_200"] = pdt.vwma(df["close"], df["tick_volume"], length=200)  # type: ignore
 
     return df.dropna()
-
-
-# if __name__ == "__main__":
-#     movingAvg("XAUUSD")

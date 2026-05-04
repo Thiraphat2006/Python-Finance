@@ -3,9 +3,10 @@ import os
 import logging
 import pandas as pd
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 sys.path.append(os.path.abspath("."))
+from src.Indicator.Moving_Avg import movingAvg
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,10 @@ class StrategyConfig:
 DEFAULT_CONFIG = StrategyConfig()
 
 
-def _validate_dataframe(df: pd.DataFrame) -> None:
+def _validate_dataframe(df: pd.DataFrame | str) -> None:
+    if isinstance(df, str):
+        raise ValueError(f"Invalid dataframe: {df}")
+
     required_columns = ["close", "EMA_21", "SMA_200", "EMA_50", "VWMA_200"]
     missing_columns = [col for col in required_columns if col not in df.columns]
     if missing_columns:
@@ -75,7 +79,11 @@ def _ema21_cross_score(
     return 0
 
 
-def _calculate_scores(df: pd.DataFrame, config: StrategyConfig) -> Dict[str, int]:
+def _calculate_scores(df: pd.DataFrame | str, config: StrategyConfig) -> Dict[str, int]:
+
+    if isinstance(df, str):
+        raise ValueError(f"Invalid dataframe: {df}")
+
     close = float(df["close"].iloc[-1])
     close_prev = float(df["close"].iloc[-2])
 
@@ -135,12 +143,12 @@ def _log_prediction(score: Dict[str, int], total_score: int, action: str) -> Non
 
 
 def moving_avg_prediction(
-    data_frame: pd.DataFrame,
+    symbol: str = "XAUUSD",
     current_position: int = 0,
     config: StrategyConfig = DEFAULT_CONFIG,
     verbose: bool = True,
 ) -> dict:
-    df = data_frame
+    df = movingAvg(symbol)
     _validate_dataframe(df)
 
     score = _calculate_scores(df, config)
@@ -160,9 +168,9 @@ def moving_avg_prediction(
     }
 
 
-def moveingAvgPerdiction(dataFrame):
+def moveingAvgPerdiction(symbol: str) -> int:
     """Backward-compatible wrapper for legacy function name."""
-    result = moving_avg_prediction(dataFrame, current_position=0, verbose=True)
+    result = moving_avg_prediction(symbol, current_position=0, verbose=True)
     return result["total_score"]
 
 
@@ -179,10 +187,12 @@ if __name__ == "__main__":
             ) from exc
 
         dataframe = movingAvg(symbol, timeFrame=mt5.TIMEFRAME_W1)
-        if dataframe is None or dataframe.empty:
-            raise ValueError("No data returned from movingAvg")
+        if isinstance(dataframe, str):
+            raise ValueError(
+                f"Error occurred while fetching data for {symbol}: {dataframe}"
+            )
 
-        return moving_avg_prediction(dataframe)
+        return moving_avg_prediction(symbol)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
     result = get_weekly_prediction("XAUUSD")
