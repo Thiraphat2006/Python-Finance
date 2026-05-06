@@ -52,3 +52,10 @@ class DataLoader:
 
         self.df = pd.DataFrame(rates)
         return self
+
+    def get_dataframe(self) -> tuple[pd.DataFrame, str, int]:
+        if self.df is None:
+            raise ValueError(
+                "Data has not been loaded yet. Call load_data() or load_with_date() first."
+            )
+        return self.df, self.symbol, self.time_frame
