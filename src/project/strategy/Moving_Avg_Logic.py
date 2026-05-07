@@ -1,12 +1,10 @@
-import sys
-import os
 import logging
+import math
 import pandas as pd
 from dataclasses import dataclass
-from typing import Dict, Tuple
+from typing import Dict, Tuple, TypedDict
 
-sys.path.append(os.path.abspath("."))
-from src.Indicator.Moving_Avg import movingAvg
+from project.Entity.moving_avg_entity import MovingAvgEntity
 
 logger = logging.getLogger(__name__)
 
@@ -21,19 +19,18 @@ class StrategyConfig:
 DEFAULT_CONFIG = StrategyConfig()
 
 
-def _validate_dataframe(df: pd.DataFrame | str) -> None:
-    if isinstance(df, str):
-        raise ValueError(f"Invalid dataframe: {df}")
+def _validate_dataframe(df: MovingAvgEntity) -> None:
 
-    required_columns = ["close", "EMA_21", "SMA_200", "EMA_50", "VWMA_200"]
-    missing_columns = [col for col in required_columns if col not in df.columns]
+    required_series = ["close", "EMA_21", "SMA_200", "EMA_50", "VWMA_200"]
+    missing_columns = [col for col in required_series if col not in df]
     if missing_columns:
         raise ValueError(f"Missing required columns: {missing_columns}")
 
-    if len(df) < 2:
-        raise ValueError(
-            "Dataframe must contain at least 2 rows for slope/cross calculations"
-        )
+    for i in required_series:
+        if len(df[i]) < 2:
+            raise ValueError(
+                f"Series '{i}' must contain at least 2 data points for slope/cross calculations"
+            )
 
 
 def _relative_slope(current_value: float, previous_value: float) -> float:
@@ -53,7 +50,7 @@ def _trend_score(
 
 
 def _ema50_score(close: float, ema50: float, near_threshold: float) -> int:
-    if ema50 == 0:
+    if math.isclose(ema50, 0.0):
         return 0
 
     distance_ema50 = abs(close - ema50) / ema50
@@ -79,10 +76,11 @@ def _ema21_cross_score(
     return 0
 
 
-def _calculate_scores(df: pd.DataFrame | str, config: StrategyConfig) -> Dict[str, int]:
+def _calculate_scores(df: MovingAvgEntity, config: StrategyConfig) -> Dict[str, int]:
 
-    if isinstance(df, str):
-        raise ValueError(f"Invalid dataframe: {df}")
+    for i in ["close", "SMA_200", "VWMA_200", "EMA_21", "EMA_50"]:
+        if pd.isna(df[i].iloc[-1]):
+            raise ValueError(f"Series '{i}' contains NaN values at the last position")
 
     close = float(df["close"].iloc[-1])
     close_prev = float(df["close"].iloc[-2])
@@ -126,10 +124,10 @@ def _decide_position_action(
 
 
 def _log_prediction(score: Dict[str, int], total_score: int, action: str) -> None:
-    logger.info("SMA Score: %s", score["sma"])
-    logger.info("EMA_21 Score: %s", score["ema21"])
-    logger.info("EMA_50 Score: %s", score["ema50"])
-    logger.info("VWMA Score: %s", score["vwma"])
+    logger.info("SMA Score: %s", score.get("sma", 0))
+    logger.info("EMA_21 Score: %s", score.get("ema21", 0))
+    logger.info("EMA_50 Score: %s", score.get("ema50", 0))
+    logger.info("VWMA Score: %s", score.get("vwma", 0))
     logger.info("Total Score: %s", total_score)
 
     action_messages = {
@@ -143,15 +141,15 @@ def _log_prediction(score: Dict[str, int], total_score: int, action: str) -> Non
 
 
 def moving_avg_prediction(
-    symbol: str = "XAUUSD",
+    dataframe: MovingAvgEntity,
     current_position: int = 0,
     config: StrategyConfig = DEFAULT_CONFIG,
     verbose: bool = True,
 ) -> dict:
-    df = movingAvg(symbol)
-    _validate_dataframe(df)
 
-    score = _calculate_scores(df, config)
+    _validate_dataframe(dataframe)
+
+    score = _calculate_scores(dataframe, config)
     total_score = sum(score.values())
     new_position, action = _decide_position_action(
         total_score, current_position, config.open_position_threshold
@@ -166,34 +164,3 @@ def moving_avg_prediction(
         "position": new_position,
         "action": action,
     }
-
-
-def moveingAvgPerdiction(symbol: str) -> int:
-    """Backward-compatible wrapper for legacy function name."""
-    result = moving_avg_prediction(symbol, current_position=0, verbose=True)
-    return result["total_score"]
-
-
-if __name__ == "__main__":
-
-    def get_weekly_prediction(symbol: str = "XAUUSD") -> dict:
-        """Load weekly data using indicator module and evaluate current signal."""
-        try:
-            import MetaTrader5 as mt5
-            from src.Indicator.Moving_Avg import movingAvg
-        except ImportError as exc:
-            raise ImportError(
-                "MetaTrader5 and indicator dependencies are required"
-            ) from exc
-
-        dataframe = movingAvg(symbol, timeFrame=mt5.TIMEFRAME_W1)
-        if isinstance(dataframe, str):
-            raise ValueError(
-                f"Error occurred while fetching data for {symbol}: {dataframe}"
-            )
-
-        return moving_avg_prediction(symbol)
-
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
-    result = get_weekly_prediction("XAUUSD")
-    print(result)

@@ -1,0 +1,8 @@
+[project]
+name = "Python_Finance"
+version = "0.1.0"
+dependencies = []
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

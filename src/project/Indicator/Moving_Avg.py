@@ -1,6 +1,10 @@
+from typing import TypedDict
+
 import MetaTrader5 as mt5
 import pandas as pd
 import pandas_ta as pdt
+
+from project.Entity.moving_avg_entity import MovingAvgEntity
 
 
 class MovingAvg:
@@ -34,7 +38,7 @@ class MovingAvg:
         self.df = df.dropna()
         return self
 
-    def get_series(self) -> dict[str, pd.Series]:
+    def get_series(self) -> MovingAvgEntity:
         if self.df is None:
             raise ValueError(
                 "Indicators have not been computed yet. Call compute_indicators() first."
