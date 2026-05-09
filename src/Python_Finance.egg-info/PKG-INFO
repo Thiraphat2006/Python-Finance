@@ -1,3 +1,13 @@
 Metadata-Version: 2.4
-Name: Python_Finance
+Name: python-finance
 Version: 0.1.0
+Summary: Add your description here
+Requires-Python: >=3.13
+Description-Content-Type: text/markdown
+Requires-Dist: metatrader5>=5.0.5735
+Requires-Dist: numpy>=2.2.6
+Requires-Dist: pandas>=2.3.3
+Requires-Dist: pandas-ta>=0.4.71b0
+Requires-Dist: vectorbt>=0.28.2
+
+# Python-Finance

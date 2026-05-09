@@ -1,8 +1,13 @@
 [project]
-name = "Python_Finance"
+name = "python-finance"
 version = "0.1.0"
-dependencies = []
-
-[build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "metatrader5>=5.0.5735",
+    "numpy>=2.2.6",
+    "pandas>=2.3.3",
+    "pandas-ta>=0.4.71b0",
+    "vectorbt>=0.28.2",
+]

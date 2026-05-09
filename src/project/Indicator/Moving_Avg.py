@@ -1,6 +1,3 @@
-from typing import TypedDict
-
-import MetaTrader5 as mt5
 import pandas as pd
 import pandas_ta as pdt
 
@@ -13,6 +10,10 @@ class MovingAvg:
     Usage:
         ma = MovingAvg(dataFrame)
         df = ma.compute_indicators().to_dataframe()
+
+
+    :param data: tuple[pd.DataFrame, str, int] - A tuple containing the DataFrame with price data, the symbol, and the timeframe.
+    :return: MovingAvg - An instance of the MovingAvg class with computed indicators.
     """
 
     def __init__(self, data: tuple[pd.DataFrame, str, int]):

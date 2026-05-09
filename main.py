@@ -2,6 +2,8 @@ from project.Indicator.Moving_Avg import MovingAvg as MA
 from project.strategy.Moving_Avg_Logic import moving_avg_prediction as MAL
 from project.Untility.data_loader import DataLoader as DL
 
+from pprint import pprint as pprint
+
 
 def main():
 
@@ -13,7 +15,7 @@ def main():
 
     ma = MA(df).compute_indicators().get_series()
 
-    print(MAL(ma))
+    pprint(MAL(ma))
 
 
 if __name__ == "__main__":

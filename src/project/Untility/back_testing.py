@@ -1,9 +1,8 @@
-import sys
-import os
 import pandas as pd
 
-sys.path.append(os.path.abspath("."))
-from project.strategy.Moving_Avg_Logic import moving_avg_prediction as mpd
+from project.Indicator.Moving_Avg import MovingAvg as MA
+from project.strategy.Moving_Avg_Logic import moving_avg_prediction as MAL
+from project.Untility.data_loader import DataLoader as DL
 
 
 def back_test(data_frame: pd.DataFrame):

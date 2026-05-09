@@ -2,7 +2,7 @@ import logging
 import math
 import pandas as pd
 from dataclasses import dataclass
-from typing import Dict, Tuple, TypedDict
+from typing import Dict, Tuple
 
 from project.Entity.moving_avg_entity import MovingAvgEntity
 
