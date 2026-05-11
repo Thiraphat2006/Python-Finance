@@ -2,6 +2,9 @@ import datetime
 import MetaTrader5 as mt5
 import pandas as pd
 from typing import Optional
+import logging
+
+losgger = logging.getLogger(__name__)
 
 
 class DataLoader:
@@ -16,7 +19,7 @@ class DataLoader:
 
     def load_with_date(
         self, utc_from: datetime.datetime, utc_to: datetime.datetime
-    ) -> "DataLoader":
+    ) -> list:
         """Load data for the specified date range.
 
         Usage:
@@ -32,11 +35,15 @@ class DataLoader:
             raise ValueError(
                 "No data returned from MetaTrader5 for the specified date range"
             )
-        self.df = pd.DataFrame(rates)
 
-        return self
+        resuit = pd.DataFrame(rates)
 
-    def load_data(self, count: int = 1000) -> "DataLoader":
+        losgger.info(
+            f"Data loaded for {self.symbol} from {utc_from} to {utc_to}, total records: {len(resuit)}"
+        )
+        return [resuit, self.symbol, self.time_frame]
+
+    def load_data(self, count: int = 1000) -> list:
         """Load a specified number of data points.
 
         Usage:
@@ -50,12 +57,7 @@ class DataLoader:
         if rates is None:
             raise ValueError("No data returned from MetaTrader5")
 
-        self.df = pd.DataFrame(rates)
-        return self
+        resuit = pd.DataFrame(rates)
 
-    def get_dataframe(self) -> tuple[pd.DataFrame, str, int]:
-        if self.df is None:
-            raise ValueError(
-                "Data has not been loaded yet. Call load_data() or load_with_date() first."
-            )
-        return self.df, self.symbol, self.time_frame
+        losgger.info(f"Data loaded for {self.symbol}, total records: {len(resuit)}")
+        return [resuit, self.symbol, self.time_frame]

@@ -1,21 +1,21 @@
-from project.Indicator.Moving_Avg import MovingAvg as MA
+import logging
+
 from project.strategy.Moving_Avg_Logic import moving_avg_prediction as MAL
 from project.Untility.data_loader import DataLoader as DL
-
 from pprint import pprint as pprint
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(module)s: %(message)s"
+)
 
 
 def main():
-
-    ROWS = 1000
-    df = DL("XAUUSD").load_data(count=ROWS).get_dataframe()
-
-    if df is None:
-        raise ValueError("Data loading failed. DataFrame is None.")
-
-    ma = MA(df).compute_indicators().get_series()
-
-    pprint(MAL(ma))
+    data = DL("XAUUSD").load_data()
+    result = MAL(data)
+    # result = result.to_frame()
+    pprint(result.groupby("Trend_Signal").size())
+    pprint(result.groupby("Trading_Signal").size())
+    pprint(result.groupby("Volume_Signal").size())
 
 
 if __name__ == "__main__":
