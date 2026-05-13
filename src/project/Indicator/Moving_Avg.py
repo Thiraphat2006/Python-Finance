@@ -34,5 +34,5 @@ class MovingAvg:
         df["EMA_50"] = df["close"].ewm(span=50, adjust=False).mean()
         df["VWMA_200"] = pdt.vwma(df["close"], df["tick_volume"], length=200)  # type: ignore
 
-        self.df = df.dropna()
+        self.df = df.dropna().copy()
         return [self.df, self.symbol, self.time_frame]

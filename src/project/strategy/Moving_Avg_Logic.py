@@ -5,27 +5,7 @@ from project.Indicator.Moving_Avg import MovingAvg
 logger = logging.getLogger(__name__)
 
 
-def clean_data(df: pd.DataFrame, columns_to_drop: list[str]) -> pd.DataFrame:
-    df = df.dropna()
-    df = df.drop(
-        columns=[
-            "open",
-            "high",
-            "low",
-            "tick_volume",
-            "spread",
-            "real_volume",
-            *columns_to_drop,
-        ],
-        errors="ignore",
-    )
-    return df
-
-
 def sma_trend(df: pd.DataFrame) -> pd.DataFrame:
-
-    columns_to_drop = ["EMA_21", "EMA_50", "VWMA_200"]
-    df = clean_data(df, columns_to_drop)
 
     close = df["close"]
     sma_200 = df["SMA_200"]
@@ -46,7 +26,6 @@ def sma_trend(df: pd.DataFrame) -> pd.DataFrame:
     df.loc[up_trend, "Trend_Signal"] = 1
     df.loc[down_trend, "Trend_Signal"] = -1
 
-    df = df.drop(columns=["SMA_200", "close"], errors="ignore")
     logger.info(f"Trend signals computed based on SMA_200 for {len(df)} records")
 
     return df
@@ -54,65 +33,65 @@ def sma_trend(df: pd.DataFrame) -> pd.DataFrame:
 
 def ema_signal(df: pd.DataFrame) -> pd.DataFrame:
 
-    columns_to_drop = ["SMA_200", "VWMA_200"]
-    df = clean_data(df, columns_to_drop)
-
     ema_fast = df["EMA_21"]
     ema_slow = df["EMA_50"]
-    buy_condition = (
-        (ema_fast > ema_slow)
-        & (ema_fast.shift(1) <= ema_slow.shift(1))
-        & (df["close"].shift(1).notna())
-    )
+    buy_condition = (ema_fast > ema_slow) & (df["close"].shift(1).notna())
 
-    sell_condition = (
-        (ema_fast < ema_slow)
-        & (ema_fast.shift(1) >= ema_slow.shift(1))
-        & (df["close"].shift(1).notna())
-    )
+    sell_condition = (ema_fast < ema_slow) & (df["close"].shift(1).notna())
+
     df["Trading_Signal"] = 0
     df.loc[buy_condition, "Trading_Signal"] = 1
     df.loc[sell_condition, "Trading_Signal"] = -1
-
-    df = df.drop(columns=["EMA_21", "EMA_50", "close"], errors="ignore")
 
     logger.info(f"EMA crossover signals computed for {len(df)} records")
     return df
 
 
 def vwma_signal(df: pd.DataFrame) -> pd.DataFrame:
-    columns_to_drop = ["SMA_200", "EMA_21", "EMA_50"]
-    df = clean_data(df, columns_to_drop)
 
     vwma = df["VWMA_200"]
-    buy_condition = (
-        (df["close"] > vwma)
-        & (df["close"].shift(1) <= vwma.shift(1))
-        & (df["close"].shift(1).notna())
-    )
+    buy_condition = (df["close"] > vwma) & (df["close"].shift(1).notna())
 
-    sell_condition = (
-        (df["close"] < vwma)
-        & (df["close"].shift(1) >= vwma.shift(1))
-        & (df["close"].shift(1).notna())
-    )
+    sell_condition = (df["close"] < vwma) & (df["close"].shift(1).notna())
+
     df["Volume_Signal"] = 0
     df.loc[buy_condition, "Volume_Signal"] = 1
     df.loc[sell_condition, "Volume_Signal"] = -1
 
-    df = df.drop(columns=["VWMA_200", "close"], errors="ignore")
     logger.info(f"VWMA crossover signals computed for {len(df)} records")
     return df
 
 
-def moving_avg_prediction(list: list) -> pd.DataFrame:
-    df, symbol, time_frame = list
-    ma_indicators = MovingAvg((df, symbol, time_frame)).compute_indicators()[0]
+def decision_logic(df: pd.DataFrame) -> pd.DataFrame:
 
-    sma_score = sma_trend(ma_indicators)
-    ema_score = ema_signal(ma_indicators)
-    vwma_score = vwma_signal(ma_indicators)
+    sma = df["Trend_Signal"]
+    ema = df["Trading_Signal"]
+    vwma = df["Volume_Signal"]
 
-    return pd.concat(
-        [sma_score, ema_score["Trading_Signal"], vwma_score["Volume_Signal"]], axis=1
-    )
+    long_entry = (sma == 1) & (vwma == 1) & (ema == 1)
+
+    short_entry = (sma == -1) & (vwma == -1) & (ema == -1)
+
+    exit_long = (sma == -1) & (vwma == -1) & (ema == -1)
+
+    exit_short = (sma == 1) & (vwma == 1) & (ema == 1)
+
+    df["long_entry"] = long_entry
+    df["short_entry"] = short_entry
+    df["exit_long"] = exit_long
+    df["exit_short"] = exit_short
+
+    return df
+
+
+def moving_avg_prediction(df: pd.DataFrame) -> pd.DataFrame:
+
+    ma_indicators = df
+
+    df = sma_trend(ma_indicators)
+    df = ema_signal(df)
+    df = vwma_signal(df)
+
+    df = decision_logic(df)
+
+    return df

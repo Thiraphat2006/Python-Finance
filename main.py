@@ -10,12 +10,14 @@ logging.basicConfig(
 
 
 def main():
-    data = DL("XAUUSD").load_data()
+    data = DL("XAUUSD").load_data(5000)
     result = MAL(data)
     # result = result.to_frame()
-    pprint(result.groupby("Trend_Signal").size())
-    pprint(result.groupby("Trading_Signal").size())
-    pprint(result.groupby("Volume_Signal").size())
+    # pprint(result.groupby("Trend_Signal").size())
+    # pprint(result.groupby("Trading_Signal").size())
+    # pprint(result.groupby("Volume_Signal").size())
+
+    pprint(result.head())
 
 
 if __name__ == "__main__":

@@ -16,6 +16,3 @@ if __name__ == "__main__":
 
     # Run backtesting
     back_test(df)
-
-
-# TODO ทำ backtesting
