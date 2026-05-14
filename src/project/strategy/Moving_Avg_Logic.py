@@ -1,97 +1,113 @@
 import logging
 import pandas as pd
-from project.Indicator.Moving_Avg import MovingAvg
 
 logger = logging.getLogger(__name__)
 
 
-def sma_trend(df: pd.DataFrame) -> pd.DataFrame:
+class MovingAvgLogic:
+    def __init__(self, data: pd.DataFrame) -> None:
+        self.df = data
 
-    close = df["close"]
-    sma_200 = df["SMA_200"]
+    def _validate_data(self) -> None:
+        required_columns = ["close", "SMA_200", "EMA_21", "EMA_50", "VWMA_200"]
+        missing_columns = [
+            col for col in required_columns if col not in self.df.columns
+        ]
 
-    up_trend = (
-        (close > sma_200)
-        & (close.shift(1) > sma_200.shift(1))
-        & (close.shift(1).notna())
-    )
+        if missing_columns:
+            raise ValueError(
+                f"DataFrame is missing required columns: {', '.join(missing_columns)}"
+            )
 
-    down_trend = (
-        (close < sma_200)
-        & (close.shift(1) < sma_200.shift(1))
-        & (close.shift(1).notna())
-    )
+    def _sma_trend(self) -> pd.DataFrame:
 
-    df["Trend_Signal"] = 0
-    df.loc[up_trend, "Trend_Signal"] = 1
-    df.loc[down_trend, "Trend_Signal"] = -1
+        close = self.df["close"]
+        sma_200 = self.df["SMA_200"]
 
-    logger.info(f"Trend signals computed based on SMA_200 for {len(df)} records")
+        up_trend = (
+            (close > sma_200)
+            & (close.shift(1) > sma_200.shift(1))
+            & (close.shift(1).notna())
+        )
 
-    return df
+        down_trend = (
+            (close < sma_200)
+            & (close.shift(1) < sma_200.shift(1))
+            & (close.shift(1).notna())
+        )
 
+        self.df["Trend_Signal"] = 0
+        self.df.loc[up_trend, "Trend_Signal"] = 1
+        self.df.loc[down_trend, "Trend_Signal"] = -1
 
-def ema_signal(df: pd.DataFrame) -> pd.DataFrame:
+        return self.df
 
-    ema_fast = df["EMA_21"]
-    ema_slow = df["EMA_50"]
-    buy_condition = (ema_fast > ema_slow) & (df["close"].shift(1).notna())
+    def _ema_signal(self) -> pd.DataFrame:
 
-    sell_condition = (ema_fast < ema_slow) & (df["close"].shift(1).notna())
+        ema_fast = self.df["EMA_21"]
+        ema_slow = self.df["EMA_50"]
+        buy_condition = (ema_fast > ema_slow) & (self.df["close"].shift(1).notna())
 
-    df["Trading_Signal"] = 0
-    df.loc[buy_condition, "Trading_Signal"] = 1
-    df.loc[sell_condition, "Trading_Signal"] = -1
+        sell_condition = (ema_fast < ema_slow) & (self.df["close"].shift(1).notna())
 
-    logger.info(f"EMA crossover signals computed for {len(df)} records")
-    return df
+        self.df["Trading_Signal"] = 0
+        self.df.loc[buy_condition, "Trading_Signal"] = 1
+        self.df.loc[sell_condition, "Trading_Signal"] = -1
 
+        return self.df
 
-def vwma_signal(df: pd.DataFrame) -> pd.DataFrame:
+    def _vwma_signal(self) -> pd.DataFrame:
 
-    vwma = df["VWMA_200"]
-    buy_condition = (df["close"] > vwma) & (df["close"].shift(1).notna())
+        vwma = self.df["VWMA_200"]
+        buy_condition = (self.df["close"] > vwma) & (self.df["close"].shift(1).notna())
 
-    sell_condition = (df["close"] < vwma) & (df["close"].shift(1).notna())
+        sell_condition = (self.df["close"] < vwma) & (self.df["close"].shift(1).notna())
 
-    df["Volume_Signal"] = 0
-    df.loc[buy_condition, "Volume_Signal"] = 1
-    df.loc[sell_condition, "Volume_Signal"] = -1
+        self.df["Volume_Signal"] = 0
+        self.df.loc[buy_condition, "Volume_Signal"] = 1
+        self.df.loc[sell_condition, "Volume_Signal"] = -1
 
-    logger.info(f"VWMA crossover signals computed for {len(df)} records")
-    return df
+        return self.df
 
+    def _decision_logic(self) -> pd.DataFrame:
 
-def decision_logic(df: pd.DataFrame) -> pd.DataFrame:
+        sma = self.df["Trend_Signal"]
+        ema = self.df["Trading_Signal"]
+        vwma = self.df["Volume_Signal"]
 
-    sma = df["Trend_Signal"]
-    ema = df["Trading_Signal"]
-    vwma = df["Volume_Signal"]
+        trend_up = (sma == 1) & (ema == 1) & (vwma == 1)
+        trend_down = (sma == -1) & (ema == -1) & (vwma == -1)
 
-    long_entry = (sma == 1) & (vwma == 1) & (ema == 1)
+        self.df["long_entry"] = trend_up & (~trend_up.shift(1).fillna(False))
+        self.df["short_entry"] = trend_down & (~trend_down.shift(1).fillna(False))
+        self.df["exit_long"] = trend_down
+        self.df["exit_short"] = trend_up
 
-    short_entry = (sma == -1) & (vwma == -1) & (ema == -1)
+        return self.df
 
-    exit_long = (sma == -1) & (vwma == -1) & (ema == -1)
+    def __call__(self) -> pd.DataFrame:
+        self._validate_data()
 
-    exit_short = (sma == 1) & (vwma == 1) & (ema == 1)
+        self._sma_trend()
+        self._ema_signal()
+        self._vwma_signal()
+        self._decision_logic()
 
-    df["long_entry"] = long_entry
-    df["short_entry"] = short_entry
-    df["exit_long"] = exit_long
-    df["exit_short"] = exit_short
+        drop_columns = [
+            "open",
+            "high",
+            "low",
+            "tick_volume",
+            "spread",
+            "real_volume",
+            "SMA_200",
+            "EMA_21",
+            "EMA_50",
+            "VWMA_200",
+        ]
+        self.df = self.df.drop(
+            drop_columns,
+            axis=1,
+        )
 
-    return df
-
-
-def moving_avg_prediction(df: pd.DataFrame) -> pd.DataFrame:
-
-    ma_indicators = df
-
-    df = sma_trend(ma_indicators)
-    df = ema_signal(df)
-    df = vwma_signal(df)
-
-    df = decision_logic(df)
-
-    return df
+        return self.df

@@ -19,7 +19,7 @@ class DataLoader:
 
     def load_with_date(
         self, utc_from: datetime.datetime, utc_to: datetime.datetime
-    ) -> list:
+    ) -> pd.DataFrame:
         """Load data for the specified date range.
 
         Usage:
@@ -41,9 +41,9 @@ class DataLoader:
         losgger.info(
             f"Data loaded for {self.symbol} from {utc_from} to {utc_to}, total records: {len(resuit)}"
         )
-        return [resuit, self.symbol, self.time_frame]
+        return resuit
 
-    def load_data(self, count: int = 1000) -> list:
+    def load_data(self, count: int = 1000) -> pd.DataFrame:
         """Load a specified number of data points.
 
         Usage:
@@ -60,4 +60,4 @@ class DataLoader:
         resuit = pd.DataFrame(rates)
 
         losgger.info(f"Data loaded for {self.symbol}, total records: {len(resuit)}")
-        return [resuit, self.symbol, self.time_frame]
+        return resuit

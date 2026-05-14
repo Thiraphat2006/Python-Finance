@@ -1,21 +1,19 @@
 import logging
 
-from project.strategy.Moving_Avg_Logic import moving_avg_prediction as MAL
+from project.strategy.Moving_Avg_Logic import MovingAvgLogic as MAL
 from project.Untility.data_loader import DataLoader as DL
+from project.Indicator.Moving_Avg import MovingAvg as MA
 from pprint import pprint as pprint
 
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(module)s: %(message)s"
+    level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(module)s: %(message)s"
 )
 
 
 def main():
     data = DL("XAUUSD").load_data(5000)
-    result = MAL(data)
-    # result = result.to_frame()
-    # pprint(result.groupby("Trend_Signal").size())
-    # pprint(result.groupby("Trading_Signal").size())
-    # pprint(result.groupby("Volume_Signal").size())
+    data = MA(data).compute_indicators()
+    result = MAL(data)()
 
     pprint(result.head())
 

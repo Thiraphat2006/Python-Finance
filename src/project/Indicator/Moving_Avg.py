@@ -10,19 +10,14 @@ class MovingAvg:
         df = ma.compute_indicators()
 
 
-    :param data: tuple[pd.DataFrame, str, int] - A tuple containing the DataFrame with price data, the symbol, and the timeframe.
-    :return: list - A list containing the DataFrame with computed indicators, the symbol, and the timeframe.
+    :param data: pd.DataFrame - The DataFrame with price data.
+    :return: pd.DataFrame - The DataFrame with computed indicators.
     """
 
-    def __init__(self, data: tuple[pd.DataFrame, str, int]):
-        self.df = data[0]
-        self.symbol = data[1]
-        self.time_frame = data[2]
+    def __init__(self, data: pd.DataFrame):
+        self.df = data
 
-    def __repr__(self) -> str:
-        return f"MovingAvg(symbol={self.symbol}, timeframe={self.time_frame})"
-
-    def compute_indicators(self) -> list:
+    def compute_indicators(self) -> pd.DataFrame:
         if self.df is None or len(self.df) < 1000:
             raise ValueError(
                 "DataFrame is not loaded or has insufficient data. Please load data before computing indicators."
@@ -35,4 +30,4 @@ class MovingAvg:
         df["VWMA_200"] = pdt.vwma(df["close"], df["tick_volume"], length=200)  # type: ignore
 
         self.df = df.dropna().copy()
-        return [self.df, self.symbol, self.time_frame]
+        return self.df
