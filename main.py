@@ -15,7 +15,7 @@ def main():
     data = MA(data).compute_indicators()
     result = MAL(data)()
 
-    pprint(result.head())
+    pprint(result.tail(20))
 
 
 if __name__ == "__main__":
