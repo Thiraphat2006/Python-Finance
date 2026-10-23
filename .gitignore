@@ -8,3 +8,6 @@ __pycache__/
 *$py.class
 
 .ruff_cache/
+
+data_cache/
+results/
