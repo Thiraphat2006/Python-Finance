@@ -87,3 +87,15 @@ if __name__ == "__main__":
     raw = loader.load_with_date(datetime(2020, 1, 1), datetime(2024, 1, 1))
     pf = run(raw, point=loader.point())
     print(stats(pf))
+
+    from project.Execution.replay import run_paper
+    from project.Risk.position_sizing import SymbolSpec
+    from project.Risk.risk_engine import RiskConfig
+
+    ind = MovingAvg(raw).compute_indicators()
+    sig = MovingAvgLogic(ind, StrategyConfig(exit_mode="ema_cross"))()
+    r = run_paper(sig, SymbolSpec("XAUUSD"), RiskConfig())
+    print(r.summary())
+
+    print(r.trades["pnl"].min())          # ควรอยู่ราว -50 ถึง -60 (0.5% ของ 10,000 + spread/gap)
+    print(r.trades["reason"].value_counts())  # ดูสัดส่วน stop / signal

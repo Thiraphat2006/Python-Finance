@@ -20,6 +20,7 @@ import pandas as pd
 
 from project.Untility.data_loader import DataLoader
 from project.Untility.evaluate import walk_forward
+from project.Untility.spread import fix_zero_spread
 
 TIMEFRAMES = {
     "H1": mt5.TIMEFRAME_H1,
@@ -41,16 +42,12 @@ def _run_pair(
     terminal_path: Optional[str],
     train_years: int,
     test_years: int,
+    fix_spread: bool = True,
+    extra_spread_points: float = 0.0,
 ):
     loader = DataLoader(symbol, TIMEFRAMES[tf_name], terminal_path=terminal_path)
     raw = loader.load_with_date(date_from, date_to)
     point = loader.point()
-
-    # walk_forward พิมพ์รายละเอียดเยอะ เก็บไว้ไม่ให้รกตอนรันหลายคู่
-    with contextlib.redirect_stdout(io.StringIO()):
-        res = walk_forward(
-            raw, train_years=train_years, test_years=test_years, point=point
-        )
 
     row = {
         "symbol": symbol,
@@ -60,9 +57,25 @@ def _run_pair(
         "end": str(raw.index.max().date()),
     }
     if "spread" in raw.columns:
-        # spread ในประวัติเก่าของ MT5 บางที่เป็น 0 ทำให้ต้นทุนต่ำเกินจริง ดูคอลัมน์นี้ประกอบ
+        # spread ในประวัติเก่าของ MT5 บางที่เป็น 0 ทำให้ต้นทุนต่ำเกินจริง (วัดจากข้อมูลดิบก่อนแก้)
         row["median_spread_pts"] = float(raw["spread"].median())
         row["zero_spread_%"] = round(float((raw["spread"] == 0).mean()) * 100, 1)
+
+    # แทน spread=0 ด้วย median ที่ไม่ใช่ 0 ของปีเดียวกัน (ต้นทุนไม่มีทางลดลง) ดู spread.py
+    if fix_spread and "spread" in raw.columns:
+        raw, _ = fix_zero_spread(raw)
+    row["spread_fixed"] = bool(fix_spread and "spread" in raw.columns)
+    row["extra_spread_pts"] = extra_spread_points
+
+    # walk_forward พิมพ์รายละเอียดเยอะ เก็บไว้ไม่ให้รกตอนรันหลายคู่
+    with contextlib.redirect_stdout(io.StringIO()):
+        res = walk_forward(
+            raw,
+            train_years=train_years,
+            test_years=test_years,
+            point=point,
+            extra_spread_points=extra_spread_points,
+        )
 
     folds = res.get("folds", pd.DataFrame())
     if "oos_summary" not in res or len(folds) == 0:
@@ -105,8 +118,15 @@ def run_matrix(
     test_years: int = 1,
     terminal_path: Optional[str] = None,
     out_dir: str = "results",
+    fix_spread: bool = True,
+    extra_spread_points: float = 0.0,
 ):
-    """walk-forward ทุกคู่ symbol x timeframe; คู่ไหนโหลดไม่ได้หรือพังจะข้ามพร้อมบอกเหตุผล ไม่ล้มทั้งชุด"""
+    """walk-forward ทุกคู่ symbol x timeframe; คู่ไหนโหลดไม่ได้หรือพังจะข้ามพร้อมบอกเหตุผล ไม่ล้มทั้งชุด
+
+    fix_spread: แทน spread=0 ในประวัติด้วย median ที่ไม่ใช่ 0 ของปีเดียวกัน (ค่าเริ่มต้นเปิด)
+    extra_spread_points: บวก spread เพิ่มทุกแท่ง (หน่วย point) ไว้ทดสอบว่าผลทนต้นทุนที่แย่กว่าจริงได้ไหม
+    ระวัง: out_dir ค่าเดิม "results" จะทับไฟล์ผลชุดก่อนหน้า ถ้าอยากเก็บไว้เทียบให้ส่ง out_dir="results_spreadfix"
+    """
     unknown = [t for t in timeframes if t not in TIMEFRAMES]
     if unknown:
         raise ValueError(f"timeframe ไม่รองรับ: {unknown} (ใช้ได้: {list(TIMEFRAMES)})")
@@ -118,7 +138,8 @@ def run_matrix(
         print(f"[{i}/{len(pairs)}] {symbol} {tf_name} ...", end=" ", flush=True)
         try:
             row, folds = _run_pair(
-                symbol, tf_name, date_from, date_to, terminal_path, train_years, test_years
+                symbol, tf_name, date_from, date_to, terminal_path, train_years, test_years,
+                fix_spread, extra_spread_points,
             )
             rows.append(row)
             if len(folds):
