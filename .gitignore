@@ -16,3 +16,8 @@ results_spreadfix/
 *.csv
 !docs/results/*.csv
 .ipynb_checkpoints/
+
+data/*.db
+data/*.db-wal
+data/*.db-shm
+logs/
