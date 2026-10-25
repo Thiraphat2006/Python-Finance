@@ -10,3 +10,9 @@ __pycache__/
 .ruff_cache/
 
 data_cache/
+dataCache/
+result/
+results_spreadfix/
+*.csv
+!docs/results/*.csv
+.ipynb_checkpoints/
