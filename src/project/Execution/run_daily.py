@@ -8,6 +8,7 @@ Exit code: 0 = สำเร็จหรือข้ามเพราะรั�
 
 import argparse
 import logging
+import os
 import sys
 from typing import Literal, Optional
 
@@ -26,6 +27,7 @@ from project.Risk.position_sizing import SymbolSpec
 from project.Risk.risk_engine import RiskConfig
 from project.Storage.log_setup import setup_logging
 from project.Storage.notify import load_env, send
+from project.Storage.backup import run_backup
 from project.Storage.trader_db import TraderDB
 
 
@@ -48,14 +50,7 @@ def _alert(
         logging.getLogger(__name__).warning("แจ้งเตือนไม่สำเร็จ: %s", type(exc).__name__)
 
 
-def main(argv: Optional[list[str]] = None) -> int:
-    load_env()
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--symbol", default="XAUUSD")
-    ap.add_argument("--db", default="data/trader.db")
-    ap.add_argument("--log-dir", default="logs")
-    args = ap.parse_args(argv)
-
+def _run_trading(args: argparse.Namespace) -> int:
     log = setup_logging(args.log_dir)
     import MetaTrader5 as mt5  # Windows เท่านั้น
 
@@ -113,6 +108,41 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
     finally:
         mt5.shutdown()
+
+
+def _backup_and_alert(args: argparse.Namespace) -> None:
+    """Run the daily backup without affecting trading's exit status."""
+    if args.no_backup:
+        return
+    backup_dir = args.backup_dir or os.environ.get("AUTOTRADER_BACKUP_DIR")
+    if not backup_dir:
+        logging.getLogger(__name__).warning("AUTOTRADER_BACKUP_DIR not set")
+        _alert(args.symbol, "warn", "backup: AUTOTRADER_BACKUP_DIR not set")
+        return
+    try:
+        result = run_backup(args.db, args.log_dir, backup_dir)
+        _alert(args.symbol, "ok" if result.ok else "warn",
+               result.summary if result.ok else "backup FAILED: " + result.summary)
+    except Exception as exc:
+        logging.getLogger(__name__).exception("Backup wrapper failed")
+        _alert(args.symbol, "warn", f"backup FAILED: {type(exc).__name__}")
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    load_env()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--symbol", default="XAUUSD")
+    ap.add_argument("--db", default="data/trader.db")
+    ap.add_argument("--log-dir", default="logs")
+    ap.add_argument("--backup-dir", default=None)
+    ap.add_argument("--no-backup", action="store_true")
+    args = ap.parse_args(argv)
+    exit_code: int
+    try:
+        exit_code = _run_trading(args)
+    finally:
+        _backup_and_alert(args)
+    return exit_code
 
 
 if __name__ == "__main__":

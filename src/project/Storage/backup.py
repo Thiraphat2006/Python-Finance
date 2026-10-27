@@ -1,0 +1,185 @@
+"""Daily backups of the trading database and log files."""
+
+from __future__ import annotations
+
+import logging
+import os
+import re
+import sqlite3
+import zipfile
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class BackupResult:
+    """Outcome and short message suitable for a Telegram notification."""
+
+    ok: bool
+    summary: str
+
+
+def _date(now: datetime) -> str:
+    return now.astimezone(timezone.utc).date().isoformat()
+
+
+def _size(path: Path) -> str:
+    return f"{max(1, round(path.stat().st_size / 1024))} KB"
+
+
+def backup_database(
+    db_path: str | os.PathLike[str],
+    dest_dir: str | os.PathLike[str],
+    *,
+    now: datetime,
+    keep: int = 30,
+) -> Path:
+    """Create an integrity-checked, WAL-safe SQLite snapshot."""
+    destination = Path(dest_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    for stale in destination.glob("trader-*.db.tmp"):
+        if stale.is_file():
+            stale.unlink()
+
+    name = f"trader-{_date(now)}.db"
+    target = destination / name
+    temporary = destination / f"{name}.tmp"
+    source_conn: sqlite3.Connection | None = None
+    copy_conn: sqlite3.Connection | None = None
+    try:
+        source_conn = sqlite3.connect(db_path)
+        copy_conn = sqlite3.connect(temporary)
+        source_conn.backup(copy_conn)
+        copy_conn.execute("PRAGMA journal_mode=DELETE").fetchone()
+        result = copy_conn.execute("PRAGMA integrity_check").fetchone()
+        if result is None or result[0] != "ok":
+            raise sqlite3.DatabaseError(f"integrity_check returned {result!r}")
+        copy_conn.commit()
+        copy_conn.close()
+        copy_conn = None
+        source_conn.close()
+        source_conn = None
+        os.replace(temporary, target)
+        prune(destination, "trader-", ".db", keep)
+        return target
+    finally:
+        if copy_conn is not None:
+            copy_conn.close()
+        if source_conn is not None:
+            source_conn.close()
+        if temporary.exists():
+            temporary.unlink()
+
+
+def backup_logs(
+    log_dir: str | os.PathLike[str],
+    dest_dir: str | os.PathLike[str],
+    *,
+    now: datetime,
+    keep: int = 30,
+) -> Path | None:
+    """Archive log files, skipping files that cannot be read."""
+    destination = Path(dest_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    files = sorted(path for path in Path(log_dir).glob("*.log*") if path.is_file())
+    if not files:
+        return None
+
+    name = f"logs-{_date(now)}.zip"
+    target = destination / name
+    temporary = destination / f"{name}.tmp"
+    log = logging.getLogger(__name__)
+    try:
+        with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for path in files:
+                try:
+                    archive.write(path, arcname=path.name)
+                except Exception as exc:
+                    log.warning("Skipping log %s: %s", path.name, type(exc).__name__)
+        os.replace(temporary, target)
+        prune(destination, "logs-", ".zip", keep)
+        return target
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def prune(
+    dest_dir: str | os.PathLike[str],
+    pattern_prefix: str,
+    suffix: str,
+    keep: int,
+) -> None:
+    """Delete old daily backup files without touching unrelated files."""
+    if keep < 0:
+        raise ValueError("keep must be non-negative")
+    patterns = {
+        ("trader-", ".db"): re.compile(r"^trader-\d{4}-\d{2}-\d{2}\.db$"),
+        ("logs-", ".zip"): re.compile(r"^logs-\d{4}-\d{2}-\d{2}\.zip$"),
+    }
+    regex = patterns.get((pattern_prefix, suffix))
+    if regex is None:
+        return
+    destination = Path(dest_dir)
+    candidates = sorted(
+        (path for path in destination.iterdir() if path.is_file() and regex.fullmatch(path.name)),
+        key=lambda path: path.name,
+        reverse=True,
+    )
+    for path in candidates[keep:]:
+        path.unlink()
+
+
+def run_backup(
+    db_path: str | os.PathLike[str],
+    log_dir: str | os.PathLike[str],
+    dest_dir: str | os.PathLike[str],
+    *,
+    now: datetime | None = None,
+    keep: int = 30,
+) -> BackupResult:
+    """Run database and log backups independently and never raise."""
+    current = now or datetime.now(timezone.utc)
+    log = logging.getLogger(__name__)
+    db_path_obj = Path(db_path)
+    db_result: Path | None = None
+    log_result: Path | None = None
+    db_error: Exception | None = None
+    log_error: Exception | None = None
+
+    if not db_path_obj.exists():
+        log.info("Database backup skipped: source does not exist")
+    else:
+        try:
+            db_result = backup_database(db_path_obj, dest_dir, now=current, keep=keep)
+            log.info("Database backup complete: %s", db_result.name)
+        except Exception as exc:
+            db_error = exc
+            log.exception("Database backup failed")
+
+    try:
+        log_result = backup_logs(log_dir, dest_dir, now=current, keep=keep)
+        if log_result is None:
+            log.info("Log backup skipped: no log files")
+        else:
+            log.info("Log backup complete: %s", log_result.name)
+    except Exception as exc:
+        log_error = exc
+        log.exception("Log backup failed")
+
+    parts: list[str] = []
+    if db_result is not None:
+        parts.append(f"{db_result.name} ({_size(db_result)})")
+    elif db_error is not None:
+        parts.append(f"database backup failed: {type(db_error).__name__}")
+    else:
+        parts.append("no db yet")
+    if log_result is not None:
+        parts.append(f"{log_result.name} ({_size(log_result)})")
+    elif log_error is not None:
+        parts.append(f"logs backup failed: {type(log_error).__name__}")
+    summary = "backup ok: " + ", ".join(parts)
+    if log_error is not None or db_error is not None:
+        summary = "backup FAILED: " + ", ".join(parts)
+    return BackupResult(db_error is None and log_error is None, summary[:300])
