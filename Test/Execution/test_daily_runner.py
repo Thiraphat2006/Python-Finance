@@ -148,6 +148,15 @@ def test_error_is_logged_and_rerun_allowed(db):
     assert run(db, b, MON.replace(hour=5)).decision == "enter"
 
 
+def test_sync_note_is_saved_in_run_result(db):
+    class SyncNoteBroker(PaperBroker):
+        def sync(self):
+            return "พบสถานะ ticket 7 ที่โปรแกรมไม่ได้เปิดรอบนี้"
+
+    r = run(db, SyncNoteBroker(GOLD, 10_000), MON)
+    assert r.sync_note == "พบสถานะ ticket 7 ที่โปรแกรมไม่ได้เปิดรอบนี้"
+
+
 # ---------- mt5_data ----------
 def _rates(n, start="2026-10-05"):
     t0 = int(pd.Timestamp(start).timestamp())

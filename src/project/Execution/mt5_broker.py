@@ -107,21 +107,32 @@ class MT5Broker:
             raise BrokerError(f"positions_get ล้มเหลว: {self.mt5.last_error()}")
         return [p for p in res if p.magic == self.magic]
 
-    def sync(self) -> None:
+    def sync(self, expected_ticket: int | None = None) -> str | None:
         """ดึงสถานะจริงจาก broker (ใช้ตอนเริ่ม / หลัง reconnect / หลังผิดพลาดแบบกำกวม)"""
         own = self._own_positions()
         if len(own) > 1:
             raise BrokerError(f"พบ {len(own)} สถานะของ magic นี้ (รองรับ 1) ตรวจใน terminal ก่อน")
+        reference_ticket = expected_ticket if expected_ticket is not None else self._ticket
         if not own:
+            note = (
+                f"สถานะ ticket {reference_ticket} หายจาก broker (โดน SL/ปิดนอกโปรแกรม)"
+                if reference_ticket is not None else None
+            )
             self.position, self._ticket = None, None
-            return
+            return note
         p = own[0]
+        note = None
+        if reference_ticket is None:
+            note = f"พบสถานะ ticket {p.ticket} ที่โปรแกรมไม่ได้เปิดรอบนี้"
+        elif reference_ticket != p.ticket:
+            note = f"สถานะ ticket เก่า {reference_ticket} เปลี่ยนเป็น ticket ใหม่ {p.ticket}"
         side = "long" if p.type == self.mt5.POSITION_TYPE_BUY else "short"
         self._ticket = p.ticket
         self.position = Position(
             side, float(p.volume), float(p.price_open), float(p.sl),
             pd.Timestamp(p.time, unit="s"),
         )
+        return note
 
     # ---------- helpers ----------
     def _filling(self):

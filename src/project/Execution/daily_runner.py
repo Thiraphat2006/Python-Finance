@@ -13,6 +13,7 @@ run_once() รับข้อมูลที่ดึงมาแล้ว (bars
 """
 
 import logging
+import inspect
 from dataclasses import dataclass
 from typing import Any, Optional, Sequence
 
@@ -35,6 +36,7 @@ class RunResult:
     decision: str  # enter | exit | hold | blocked | error | skip
     reason: str = "ok"
     run_id: Optional[int] = None
+    sync_note: Optional[str] = None
 
 
 def _order(symbol: str, kind: str, side: str, lots: float, ok: bool, **kw: Any) -> dict:
@@ -140,6 +142,7 @@ def run_once(
     other_positions = [(position, spec)] ของ symbol อื่น (ไว้นับ open risk รวมเมื่อขยายเป็นหลาย symbol)"""
     log = logger or logging.getLogger("autotrader")
     symbol = spec.symbol
+    state_key = f"open_ticket:{strategy.name}:{symbol}"
     key = strategy.key(bars, now)
     if db.already_processed(strategy.name, symbol, key):
         log.info("ข้าม: %s %s ประมวลผลแล้ว (%s)", strategy.name, symbol, key)
@@ -149,8 +152,17 @@ def run_once(
     mid, hs = (bid + ask) / 2, (ask - bid) / 2
     spread_pts = (ask - bid) / spec.point
 
+    sync_note = None
     if hasattr(broker, "sync"):  # live broker: ดึงสถานะจริงก่อนตัดสินใจทุกครั้ง
-        broker.sync()
+        raw_ticket = db.get_state(state_key)
+        expected_ticket = int(raw_ticket) if raw_ticket not in (None, "") else None
+        sync_method = broker.sync
+        if "expected_ticket" in inspect.signature(sync_method).parameters:
+            sync_note = sync_method(expected_ticket=expected_ticket)
+        else:
+            sync_note = sync_method()
+        if sync_note is not None:
+            log.warning("สถานะ broker ไม่ตรงกับโปรแกรม: %s", sync_note)
     db.log_quote(symbol, bid, ask, spec.point, ts=now)
     equity = broker.equity(mid)
     engine = load_engine(db, cfg, equity)
@@ -183,6 +195,8 @@ def run_once(
         ("บันทึก snapshot", lambda: db.log_snapshot(
             broker.cash, broker.equity(mid), broker.open_positions, ts=now)),
         ("บันทึก deals", lambda: log_recent_deals(db, mt5, symbol, magic) if mt5 else 0),
+        ("บันทึก ticket สถานะ", lambda: db.set_state(
+            state_key, "" if getattr(broker, "_ticket", None) is None else broker._ticket)),
     ):
         try:
             fn()
@@ -190,4 +204,4 @@ def run_once(
             log.exception("%s ไม่สำเร็จ (ไม่กระทบการเทรด)", what)
 
     log.info("จบรอบ %s %s: %s (%s) status=%s", strategy.name, symbol, decision, reason, status)
-    return RunResult(status, decision, reason, run_id)
+    return RunResult(status, decision, reason, run_id, sync_note)
