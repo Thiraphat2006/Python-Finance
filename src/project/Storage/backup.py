@@ -47,6 +47,7 @@ def backup_database(
     temporary = destination / f"{name}.tmp"
     source_conn: sqlite3.Connection | None = None
     copy_conn: sqlite3.Connection | None = None
+    log = logging.getLogger(__name__)
     try:
         source_conn = sqlite3.connect(db_path)
         copy_conn = sqlite3.connect(temporary)
@@ -61,15 +62,22 @@ def backup_database(
         source_conn.close()
         source_conn = None
         os.replace(temporary, target)
-        prune(destination, "trader-", ".db", keep)
+        try:
+            prune(destination, "trader-", ".db", keep)
+        except Exception as exc:
+            log.warning("Prune failed: %s", type(exc).__name__)
         return target
     finally:
         if copy_conn is not None:
             copy_conn.close()
         if source_conn is not None:
             source_conn.close()
-        if temporary.exists():
-            temporary.unlink()
+        for path in (temporary, Path(f"{temporary}-wal"), Path(f"{temporary}-shm")):
+            try:
+                if path.exists():
+                    path.unlink()
+            except OSError:
+                pass
 
 
 def backup_logs(
@@ -98,7 +106,10 @@ def backup_logs(
                 except Exception as exc:
                     log.warning("Skipping log %s: %s", path.name, type(exc).__name__)
         os.replace(temporary, target)
-        prune(destination, "logs-", ".zip", keep)
+        try:
+            prune(destination, "logs-", ".zip", keep)
+        except Exception as exc:
+            log.warning("Prune failed: %s", type(exc).__name__)
         return target
     finally:
         if temporary.exists():
