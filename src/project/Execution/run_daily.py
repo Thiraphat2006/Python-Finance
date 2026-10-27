@@ -7,8 +7,9 @@ Exit code: 0 = สำเร็จหรือข้ามเพราะรั�
 """
 
 import argparse
+import logging
 import sys
-from typing import Optional
+from typing import Literal, Optional
 
 import pandas as pd
 
@@ -24,10 +25,31 @@ from project.Execution.signals import ScheduledTestStrategy
 from project.Risk.position_sizing import SymbolSpec
 from project.Risk.risk_engine import RiskConfig
 from project.Storage.log_setup import setup_logging
+from project.Storage.notify import load_env, send
 from project.Storage.trader_db import TraderDB
 
 
+def _alert(
+    symbol: str,
+    level: Literal["ok", "trade", "warn", "error", "risk"],
+    text: str,
+) -> None:
+    emoji = {
+        "ok": "⚪",
+        "trade": "🟢",
+        "warn": "🟡",
+        "error": "🔴",
+        "risk": "🚨",
+    }[level]
+    try:
+        send(f"{emoji} {symbol} · {text}", silent=level == "ok")
+    except Exception as exc:
+        # Notifications must never change the trading flow.
+        logging.getLogger(__name__).warning("แจ้งเตือนไม่สำเร็จ: %s", type(exc).__name__)
+
+
 def main(argv: Optional[list[str]] = None) -> int:
+    load_env()
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbol", default="XAUUSD")
     ap.add_argument("--db", default="data/trader.db")
@@ -39,17 +61,20 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if not mt5.initialize():
         log.error("initialize ไม่สำเร็จ: %s", mt5.last_error())
+        _alert(args.symbol, "error", "initialize ไม่สำเร็จ")
         return 1
     try:
         info = mt5.symbol_info(args.symbol)
         if info is None:
             log.error("ไม่พบ symbol %s", args.symbol)
+            _alert(args.symbol, "error", "ไม่พบ symbol")
             return 1
         if not info.visible:
             mt5.symbol_select(args.symbol, True)
         if not is_market_open(mt5, args.symbol):
             # ไม่บันทึกอะไรเลย (ไม่ใช้กุญแจของวัน, ไม่เก็บ quote เก่า) รันใหม่ตอนตลาดเปิดได้
             log.warning("ตลาด %s ปิดอยู่ (ไม่มี tick ใหม่) ข้ามรอบนี้", args.symbol)
+            _alert(args.symbol, "ok", "ตลาดปิด ข้ามรอบ")
             return 0
         spec = SymbolSpec(
             args.symbol, point=info.point, contract_size=info.trade_contract_size,
@@ -66,9 +91,25 @@ def main(argv: Optional[list[str]] = None) -> int:
                 now=pd.Timestamp.now(tz="UTC").tz_localize(None),
                 mt5=mt5, magic=broker.magic, logger=log,
             )
+        if result.sync_note:
+            _alert(args.symbol, "warn", f"สถานะไม่ตรง broker: {result.sync_note}")
+        if result.status == "error":
+            _alert(args.symbol, "error", result.reason)
+        elif result.status == "skipped":
+            _alert(args.symbol, "ok", "ข้าม (ประมวลผลแล้ว)")
+        elif result.decision == "exit" and result.reason in ("kill_switch", "daily_limit"):
+            _alert(args.symbol, "risk", f"ปิดสถานะ: {result.reason}")
+        elif result.decision in ("enter", "exit"):
+            action = "เปิดสถานะ" if result.decision == "enter" else "ปิดสถานะ"
+            _alert(args.symbol, "trade", f"{action}: {result.reason}")
+        elif result.decision == "blocked":
+            _alert(args.symbol, "warn", f"blocked: {result.reason}")
+        elif result.decision == "hold":
+            _alert(args.symbol, "ok", "hold")
         return 1 if result.status == "error" else 0
-    except Exception:
+    except Exception as exc:
         log.exception("ลูปรายวันล้มเหลว")
+        _alert(args.symbol, "error", f"ลูปล้มเหลว {type(exc).__name__}")
         return 1
     finally:
         mt5.shutdown()

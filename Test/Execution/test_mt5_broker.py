@@ -175,3 +175,58 @@ def test_sync_adopts_existing_position():
     assert b2.position.side == "short" and b2.open_positions == 1
     with pytest.raises(RuntimeError):
         b2.open("long", 0.1, 0, 0, stop=1990.0, ts=TS)
+
+
+def test_sync_reports_missing_position():
+    fake, b = make()
+    b.open("long", 0.1, 0, 0, stop=1990.0, ts=TS)
+    ticket = b._ticket
+    fake.positions.clear()
+    assert b.sync() == f"สถานะ ticket {ticket} หายจาก broker (โดน SL/ปิดนอกโปรแกรม)"
+
+
+def test_sync_reports_unexpected_position():
+    fake, b = make()
+    fake.positions.append(NS(ticket=7, magic=b.magic, type=0, volume=0.1,
+                              price_open=2000.0, sl=1990.0, time=1_700_000_000))
+    assert b.sync() == "พบสถานะ ticket 7 ที่โปรแกรมไม่ได้เปิดรอบนี้"
+
+
+def test_sync_reports_ticket_change():
+    fake, b = make()
+    b.open("long", 0.1, 0, 0, stop=1990.0, ts=TS)
+    old_ticket = b._ticket
+    fake.positions[0].ticket = 8
+    assert b.sync() == f"สถานะ ticket เก่า {old_ticket} เปลี่ยนเป็น ticket ใหม่ 8"
+
+
+def test_sync_matching_position_returns_none():
+    fake, b = make()
+    b.open("long", 0.1, 0, 0, stop=1990.0, ts=TS)
+    assert b.sync() is None
+
+
+def test_sync_with_no_positions_returns_none():
+    _, b = make()
+    assert b.sync() is None
+
+
+def test_sync_uses_persisted_expected_ticket_across_broker_processes():
+    fake, first = make()
+    first.open("long", 0.1, 0, 0, stop=1990.0, ts=TS)
+    ticket = first._ticket
+
+    second = MT5Broker(SPEC, "XAUUSD", mt5_module=fake)
+    assert second.sync(expected_ticket=ticket) is None
+
+
+def test_sync_reports_persisted_ticket_removed_before_new_process():
+    fake, first = make()
+    first.open("long", 0.1, 0, 0, stop=1990.0, ts=TS)
+    ticket = first._ticket
+    fake.positions.clear()
+
+    second = MT5Broker(SPEC, "XAUUSD", mt5_module=fake)
+    assert second.sync(expected_ticket=ticket) == (
+        f"สถานะ ticket {ticket} หายจาก broker (โดน SL/ปิดนอกโปรแกรม)"
+    )
