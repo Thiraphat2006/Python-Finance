@@ -58,14 +58,15 @@ def _act(
         else:
             reason = sig.reason
         ticket = getattr(broker, "_ticket", None)
+        requested = bid if pos.side == "long" else ask
         try:
             trade = broker.close(mid, hs, now, reason)
         except Exception as exc:
             orders.append(_order(symbol, "close", pos.side, pos.lots, False,
-                                 requested_price=mid, ticket=ticket, comment=str(exc)[:500]))
+                                 requested_price=requested, ticket=ticket, comment=str(exc)[:500]))
             raise
         orders.append(_order(symbol, "close", pos.side, pos.lots, True,
-                             requested_price=mid, fill_price=trade.exit, ticket=ticket,
+                             requested_price=requested, fill_price=trade.exit, ticket=ticket,
                              comment=reason))
         log.info("ปิดสถานะ %s %s lots=%s ที่ %.2f pnl=%.2f (%s)",
                  symbol, pos.side, pos.lots, trade.exit, trade.pnl, reason)

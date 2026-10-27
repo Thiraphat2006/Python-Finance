@@ -306,6 +306,8 @@ def test_end_to_end_with_real_mt5broker_across_two_processes(db):
     deals = db.query("SELECT entry FROM deals ORDER BY deal_ticket")
     assert [d["entry"] for d in deals] == [0, 1]  # IN แล้ว OUT ถูกบันทึกครบ
     assert [o["kind"] for o in db.query("SELECT kind FROM orders ORDER BY order_id")] == ["open", "close"]
+    close_order = db.query("SELECT * FROM orders WHERE kind='close'")[0]
+    assert close_order["requested_price"] == pytest.approx(fake.bid)
     # รันซ้ำวันเดียวกัน ต้องไม่เปิดออเดอร์เพิ่มแม้ broker ใหม่
     _, r = new_process_run(TUE.replace(hour=8))
     assert r.decision == "skip" and fake.positions == []
