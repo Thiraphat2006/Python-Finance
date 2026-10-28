@@ -6,7 +6,12 @@ import pytest
 
 from project.Execution.daily_runner import run_once
 from project.Execution.mt5_broker import MT5Broker
-from project.Execution.mt5_data import add_atr, fetch_d1_bars, is_market_open, log_recent_deals
+from project.Execution.mt5_data import (
+    add_atr,
+    fetch_d1_bars,
+    is_market_open,
+    log_recent_deals,
+)
 from project.Execution.paper_broker import PaperBroker
 from project.Execution.signals import ScheduledTestStrategy
 from project.Risk.position_sizing import SymbolSpec
@@ -179,38 +184,66 @@ def test_fetch_d1_bars_drops_forming_bar_and_adds_atr():
     assert bars["atr"].iloc[-1] > 0 and np.isnan(bars["atr"].iloc[0])
 
 
-def _tick_mt5(ticks, trade_mode=4):
-    it = iter(ticks)
-    last = {}
-
-    def tick(s):
-        try:
-            last["t"] = next(it)
-        except StopIteration:
-            pass
-        return SimpleNamespace(time=last["t"] // 1000, time_msc=last["t"])
-
+def _tick_mt5(tick_time, trade_mode=4):
     return SimpleNamespace(
-        SYMBOL_TRADE_MODE_FULL=4, symbol_info_tick=tick,
+        SYMBOL_TRADE_MODE_FULL=4,
+        symbol_info_tick=lambda s: SimpleNamespace(time=tick_time),
         symbol_info=lambda s: SimpleNamespace(trade_mode=trade_mode),
     )
 
 
-def test_market_open_when_tick_changes():
-    mt5 = _tick_mt5([1_000_000, 1_000_000, 1_000_450])
-    assert is_market_open(mt5, "XAUUSD", sleep=lambda s: None) is True
+class FakeClock:
+    def __init__(self):
+        self.elapsed = 0.0
+        self.sleeps = []
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.elapsed += seconds
 
 
-def test_market_closed_when_tick_is_stale():
-    mt5 = _tick_mt5([1_000_000])  # tick เดิมตลอด (เหมือนวันอาทิตย์)
-    slept = []
-    assert is_market_open(mt5, "XAUUSD", wait_s=3, poll_s=0.5, sleep=slept.append) is False
-    assert len(slept) == 6  # รอครบเวลาก่อนยอมแพ้
+def test_market_open_when_tick_changes_after_35_seconds():
+    clock = FakeClock()
+    calls = 0
+
+    def tick(_symbol):
+        nonlocal calls
+        calls += 1
+        return SimpleNamespace(time=1 if clock.elapsed < 35 else 2)
+
+    mt5 = SimpleNamespace(
+        SYMBOL_TRADE_MODE_FULL=4,
+        symbol_info_tick=tick,
+        symbol_info=lambda s: SimpleNamespace(trade_mode=4),
+    )
+    assert is_market_open(mt5, "XAUUSD", sleep=clock.sleep) is True
+    assert clock.elapsed == pytest.approx(35.0)
+    assert calls > 1
 
 
-def test_market_closed_when_trading_disabled():
-    mt5 = _tick_mt5([1, 2, 3], trade_mode=0)
-    assert is_market_open(mt5, "XAUUSD", sleep=lambda s: None) is False
+def test_market_closed_when_tick_never_changes_after_default_wait():
+    clock = FakeClock()
+    mt5 = _tick_mt5(1)
+    assert is_market_open(mt5, "XAUUSD", sleep=clock.sleep) is False
+    assert clock.elapsed == pytest.approx(60.0)
+
+
+def test_market_closed_when_symbol_is_not_fully_tradable():
+    clock = FakeClock()
+    mt5 = _tick_mt5(1, trade_mode=0)
+    assert is_market_open(mt5, "XAUUSD", sleep=clock.sleep) is False
+    assert clock.sleeps == []
+
+
+def test_market_closed_when_there_is_no_tick():
+    clock = FakeClock()
+    mt5 = SimpleNamespace(
+        SYMBOL_TRADE_MODE_FULL=4,
+        symbol_info_tick=lambda s: None,
+        symbol_info=lambda s: SimpleNamespace(trade_mode=4),
+    )
+    assert is_market_open(mt5, "XAUUSD", sleep=clock.sleep) is False
+    assert clock.sleeps == []
 
 
 def test_add_atr_known_value():
