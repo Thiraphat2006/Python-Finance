@@ -121,8 +121,10 @@ def _backup_and_alert(args: argparse.Namespace) -> None:
         return
     try:
         result = run_backup(args.db, args.log_dir, backup_dir)
-        _alert(args.symbol, "ok" if result.ok else "warn",
-               result.summary if result.ok else "backup FAILED: " + result.summary)
+        if result.ok:
+            logging.getLogger(__name__).info(result.summary)
+        else:
+            _alert(args.symbol, "warn", "backup FAILED: " + result.summary)
     except Exception as exc:
         logging.getLogger(__name__).exception("Backup wrapper failed")
         _alert(args.symbol, "warn", f"backup FAILED: {type(exc).__name__}")

@@ -9,6 +9,7 @@ import sqlite3
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from hashlib import sha256
 from pathlib import Path
 
 
@@ -18,6 +19,7 @@ class BackupResult:
 
     ok: bool
     summary: str
+    changed: bool = True
 
 
 def _date(now: datetime) -> str:
@@ -28,13 +30,26 @@ def _size(path: Path) -> str:
     return f"{max(1, round(path.stat().st_size / 1024))} KB"
 
 
+def _content_digest(connection: sqlite3.Connection) -> str:
+    return sha256("\n".join(connection.iterdump()).encode()).hexdigest()
+
+
+def _newest_backup(destination: Path) -> Path | None:
+    pattern = re.compile(r"^trader-\d{4}-\d{2}-\d{2}\.db$")
+    candidates = [
+        path for path in destination.iterdir()
+        if path.is_file() and pattern.fullmatch(path.name)
+    ]
+    return max(candidates, key=lambda path: path.name, default=None)
+
+
 def backup_database(
     db_path: str | os.PathLike[str],
     dest_dir: str | os.PathLike[str],
     *,
     now: datetime,
     keep: int = 30,
-) -> Path:
+) -> tuple[Path, bool]:
     """Create an integrity-checked, WAL-safe SQLite snapshot."""
     destination = Path(dest_dir)
     destination.mkdir(parents=True, exist_ok=True)
@@ -57,6 +72,23 @@ def backup_database(
         if result is None or result[0] != "ok":
             raise sqlite3.DatabaseError(f"integrity_check returned {result!r}")
         copy_conn.commit()
+        new_digest = _content_digest(copy_conn)
+        newest = _newest_backup(destination)
+        if newest is not None:
+            try:
+                uri = f"file:{newest.resolve().as_posix()}?mode=ro"
+                with sqlite3.connect(uri, uri=True) as old_conn:
+                    old_integrity = old_conn.execute("PRAGMA integrity_check").fetchone()
+                    if old_integrity is not None and old_integrity[0] == "ok":
+                        if _content_digest(old_conn) == new_digest:
+                            copy_conn.close()
+                            copy_conn = None
+                            source_conn.close()
+                            source_conn = None
+                            temporary.unlink()
+                            return newest, False
+            except Exception:
+                pass
         copy_conn.close()
         copy_conn = None
         source_conn.close()
@@ -66,7 +98,7 @@ def backup_database(
             prune(destination, "trader-", ".db", keep)
         except Exception as exc:
             log.warning("Prune failed: %s", type(exc).__name__)
-        return target
+        return target, True
     finally:
         if copy_conn is not None:
             copy_conn.close()
@@ -155,6 +187,7 @@ def run_backup(
     log = logging.getLogger(__name__)
     db_path_obj = Path(db_path)
     db_result: Path | None = None
+    db_changed = False
     log_result: Path | None = None
     db_error: Exception | None = None
     log_error: Exception | None = None
@@ -163,21 +196,22 @@ def run_backup(
         log.info("Database backup skipped: source does not exist")
     else:
         try:
-            db_result = backup_database(db_path_obj, dest_dir, now=current, keep=keep)
+            db_result, db_changed = backup_database(db_path_obj, dest_dir, now=current, keep=keep)
             log.info("Database backup complete: %s", db_result.name)
         except Exception as exc:
             db_error = exc
             log.exception("Database backup failed")
 
-    try:
-        log_result = backup_logs(log_dir, dest_dir, now=current, keep=keep)
-        if log_result is None:
-            log.info("Log backup skipped: no log files")
-        else:
-            log.info("Log backup complete: %s", log_result.name)
-    except Exception as exc:
-        log_error = exc
-        log.exception("Log backup failed")
+    if db_changed:
+        try:
+            log_result = backup_logs(log_dir, dest_dir, now=current, keep=keep)
+            if log_result is None:
+                log.info("Log backup skipped: no log files")
+            else:
+                log.info("Log backup complete: %s", log_result.name)
+        except Exception as exc:
+            log_error = exc
+            log.exception("Log backup failed")
 
     parts: list[str] = []
     if db_result is not None:
@@ -190,7 +224,9 @@ def run_backup(
         parts.append(f"{log_result.name} ({_size(log_result)})")
     elif log_error is not None:
         parts.append(f"logs backup failed: {type(log_error).__name__}")
+    if db_result is not None and not db_changed:
+        return BackupResult(True, "backup skipped: db unchanged", changed=False)
     summary = "backup ok: " + ", ".join(parts)
     if log_error is not None or db_error is not None:
         summary = "backup FAILED: " + ", ".join(parts)
-    return BackupResult(db_error is None and log_error is None, summary[:300])
+    return BackupResult(db_error is None and log_error is None, summary[:300], changed=db_changed)
