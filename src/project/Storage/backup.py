@@ -7,6 +7,7 @@ import os
 import re
 import sqlite3
 import zipfile
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -75,20 +76,23 @@ def backup_database(
         new_digest = _content_digest(copy_conn)
         newest = _newest_backup(destination)
         if newest is not None:
+            unchanged = False
             try:
                 uri = f"file:{newest.resolve().as_posix()}?mode=ro"
-                with sqlite3.connect(uri, uri=True) as old_conn:
+                with closing(sqlite3.connect(uri, uri=True)) as old_conn:
                     old_integrity = old_conn.execute("PRAGMA integrity_check").fetchone()
                     if old_integrity is not None and old_integrity[0] == "ok":
                         if _content_digest(old_conn) == new_digest:
-                            copy_conn.close()
-                            copy_conn = None
-                            source_conn.close()
-                            source_conn = None
-                            temporary.unlink()
-                            return newest, False
+                            unchanged = True
             except Exception:
                 pass
+            if unchanged:
+                copy_conn.close()
+                copy_conn = None
+                source_conn.close()
+                source_conn = None
+                temporary.unlink()
+                return newest, False
         copy_conn.close()
         copy_conn = None
         source_conn.close()
@@ -193,6 +197,7 @@ def run_backup(
     log_error: Exception | None = None
 
     if not db_path_obj.exists():
+        db_error = FileNotFoundError(db_path_obj)
         log.info("Database backup skipped: source does not exist")
     else:
         try:
@@ -202,7 +207,7 @@ def run_backup(
             db_error = exc
             log.exception("Database backup failed")
 
-    if db_changed:
+    if db_changed or db_error is not None:
         try:
             log_result = backup_logs(log_dir, dest_dir, now=current, keep=keep)
             if log_result is None:

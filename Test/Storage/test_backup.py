@@ -59,12 +59,31 @@ def test_database_backup_unchanged_preserves_existing_file(tmp_path):
     assert first.stat().st_mtime_ns == mtime
 
 
+def test_database_backup_same_day_changed_replaces_existing_file(tmp_path):
+    source = tmp_path / "t.db"
+    with TraderDB(source) as db:
+        db.set_state("value", "one")
+    dest = tmp_path / "backups"
+
+    first, first_changed = backup_database(source, dest, now=NOW)
+    with TraderDB(source) as db:
+        db.set_state("value", "two")
+    second, second_changed = backup_database(source, dest, now=NOW)
+
+    assert first == second
+    assert first_changed is True and second_changed is True
+    with sqlite3.connect(second) as connection:
+        assert connection.execute(
+            "SELECT value FROM state WHERE key = 'value'"
+        ).fetchone() == ("two",)
+
+
 def test_database_backup_corrupt_newest_backup_is_replaced(tmp_path):
     source = tmp_path / "t.db"
     TraderDB(source).close()
     dest = tmp_path / "backups"
     dest.mkdir()
-    newest = dest / "trader-2026-10-29.db"
+    newest = dest / "trader-2026-10-28.db"
     newest.write_bytes(b"not sqlite")
 
     result, changed = backup_database(source, dest, now=NOW)
@@ -141,11 +160,13 @@ def test_run_backup_never_raises_and_db_failure_does_not_block_logs(tmp_path):
     logs.mkdir()
     (logs / "a.log").write_text("a")
     result = run_backup(tmp_path / "missing.db", logs, tmp_path / "out", now=NOW)
-    assert result.ok and "no db yet" in result.summary
+    assert result.ok is False
+    assert "database backup failed" in result.summary
+    assert (tmp_path / "out" / "logs-2026-10-28.zip").exists()
     blocked = tmp_path / "blocked"
     blocked.write_text("not a directory")
     result = run_backup(tmp_path / "missing.db", logs, blocked, now=NOW)
-    assert result.ok is True
+    assert result.ok is False
 
 
 def test_run_backup_only_writes_logs_when_database_changes(tmp_path):
