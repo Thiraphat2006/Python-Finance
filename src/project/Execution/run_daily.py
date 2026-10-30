@@ -10,7 +10,9 @@ import argparse
 import logging
 import os
 import sys
-from typing import Literal, Optional
+import time
+from datetime import datetime, timedelta, timezone
+from typing import Callable, Literal, NamedTuple, Optional
 
 import pandas as pd
 
@@ -29,6 +31,11 @@ from project.Storage.log_setup import setup_logging
 from project.Storage.notify import load_env, send
 from project.Storage.backup import run_backup
 from project.Storage.trader_db import TraderDB
+
+
+class TradingResult(NamedTuple):
+    code: int
+    retry_reason: Literal["market_closed", "init_failed"] | None
 
 
 def _alert(
@@ -50,14 +57,19 @@ def _alert(
         logging.getLogger(__name__).warning("แจ้งเตือนไม่สำเร็จ: %s", type(exc).__name__)
 
 
-def _run_trading(args: argparse.Namespace) -> int:
+def _run_trading(
+    args: argparse.Namespace, *, quiet_retryable: bool = False
+) -> TradingResult:
     log = setup_logging(args.log_dir)
     import MetaTrader5 as mt5  # Windows เท่านั้น
 
     if not mt5.initialize():
         log.error("initialize ไม่สำเร็จ: %s", mt5.last_error())
-        _alert(args.symbol, "error", "initialize ไม่สำเร็จ")
-        return 1
+        if quiet_retryable:
+            log.warning("initialize ไม่สำเร็จ จะลองใหม่")
+        else:
+            _alert(args.symbol, "error", "initialize ไม่สำเร็จ")
+        return TradingResult(1, "init_failed")
     try:
         info = mt5.symbol_info(args.symbol)
         if info is None:
@@ -69,8 +81,9 @@ def _run_trading(args: argparse.Namespace) -> int:
         if not is_market_open(mt5, args.symbol):
             # ไม่บันทึกอะไรเลย (ไม่ใช้กุญแจของวัน, ไม่เก็บ quote เก่า) รันใหม่ตอนตลาดเปิดได้
             log.warning("ตลาด %s ปิดอยู่ (ไม่มี tick ใหม่) ข้ามรอบนี้", args.symbol)
-            _alert(args.symbol, "ok", "ตลาดปิด ข้ามรอบ")
-            return 0
+            if not quiet_retryable:
+                _alert(args.symbol, "ok", "ตลาดปิด ข้ามรอบ")
+            return TradingResult(0, "market_closed")
         spec = SymbolSpec(
             args.symbol, point=info.point, contract_size=info.trade_contract_size,
             volume_min=info.volume_min, volume_step=info.volume_step,
@@ -101,11 +114,11 @@ def _run_trading(args: argparse.Namespace) -> int:
             _alert(args.symbol, "warn", f"blocked: {result.reason}")
         elif result.decision == "hold":
             _alert(args.symbol, "ok", "hold")
-        return 1 if result.status == "error" else 0
+        return TradingResult(1 if result.status == "error" else 0, None)
     except Exception as exc:
         log.exception("ลูปรายวันล้มเหลว")
         _alert(args.symbol, "error", f"ลูปล้มเหลว {type(exc).__name__}")
-        return 1
+        return TradingResult(1, None)
     finally:
         mt5.shutdown()
 
@@ -130,7 +143,12 @@ def _backup_and_alert(args: argparse.Namespace) -> None:
         _alert(args.symbol, "warn", f"backup FAILED: {type(exc).__name__}")
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(
+    argv: Optional[list[str]] = None,
+    *,
+    clock: Callable[[], datetime] | None = None,
+    sleep: Callable[[float], None] | None = None,
+) -> int:
     load_env()
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbol", default="XAUUSD")
@@ -138,10 +156,44 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--log-dir", default="logs")
     ap.add_argument("--backup-dir", default=None)
     ap.add_argument("--no-backup", action="store_true")
+    ap.add_argument("--retry-until-minutes", type=int, default=0)
+    ap.add_argument("--retry-every-seconds", type=int, default=300)
     args = ap.parse_args(argv)
     exit_code: int
     try:
-        exit_code = _run_trading(args)
+        if args.retry_until_minutes <= 0:
+            result = _run_trading(args)
+            # Keep compatibility with callers that monkeypatch the old int-returning function.
+            exit_code = result.code if isinstance(result, TradingResult) else result
+        else:
+            now = clock or (lambda: datetime.now(timezone.utc))
+            wait = sleep or time.sleep
+            start = now()
+            deadline = start + timedelta(minutes=args.retry_until_minutes)
+            while True:
+                result = _run_trading(args, quiet_retryable=True)
+                if not isinstance(result, TradingResult):
+                    exit_code = result
+                    break
+                if result.retry_reason is None:
+                    exit_code = result.code
+                    break
+                if now() + timedelta(seconds=args.retry_every_seconds) > deadline:
+                    if result.retry_reason == "market_closed":
+                        _alert(
+                            args.symbol,
+                            "warn",
+                            f"ตลาดปิด/ไม่มี tick ตลอด {args.retry_until_minutes} นาที ไม่ได้ประมวลผลวันนี้",
+                        )
+                    else:
+                        _alert(
+                            args.symbol,
+                            "error",
+                            f"initialize ล้มเหลวตลอด {args.retry_until_minutes} นาที",
+                        )
+                    exit_code = result.code
+                    break
+                wait(args.retry_every_seconds)
     finally:
         _backup_and_alert(args)
     return exit_code
