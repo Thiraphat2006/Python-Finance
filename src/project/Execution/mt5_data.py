@@ -30,12 +30,12 @@ def get_quote(mt5, symbol: str) -> tuple[float, float]:
 
 
 def is_market_open(
-    mt5, symbol: str, wait_s: float = 15.0, poll_s: float = 0.5, sleep=time.sleep
+    mt5, symbol: str, wait_s: float = 60.0, poll_s: float = 0.5, sleep=time.sleep
 ) -> bool:
     """ตลาดเปิดจริงไหม: symbol เทรดได้เต็ม และมี tick ใหม่เข้ามาภายใน wait_s วินาที
 
     ใช้ "tick เปลี่ยน" แทนการเทียบเวลา เพราะ tick.time เป็นเวลา server (ไม่ใช่ UTC) เทียบตรง ๆ ไม่ได้
-    ตลาดเปิด: คืน True ทันทีที่ tick แรกเปลี่ยน (ปกติไม่ถึงวินาที); ตลาดปิด: รอครบ wait_s แล้วคืน False
+    ตลาดเปิด: คืน True ทันทีที่ tick เปลี่ยน (อาจใช้เวลาหลายสิบวินาที); ตลาดปิด: รอครบ wait_s แล้วคืน False
     """
     info = mt5.symbol_info(symbol)
     if info is None or info.trade_mode != getattr(mt5, "SYMBOL_TRADE_MODE_FULL", 4):
