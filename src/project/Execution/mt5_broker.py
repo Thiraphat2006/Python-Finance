@@ -69,7 +69,9 @@ class MT5Broker:
         if info is None:
             raise BrokerError(f"อ่าน account_info ไม่ได้: {self.mt5.last_error()}")
         if info.trade_mode != _ACCOUNT_TRADE_MODE_DEMO and not allow_live:
-            raise BrokerError("บัญชีนี้ไม่ใช่ demo ปฏิเสธการทำงาน (ตั้ง allow_live=True ถ้าตั้งใจจริง)")
+            raise BrokerError(
+                "บัญชีนี้ไม่ใช่ demo ปฏิเสธการทำงาน (ตั้ง allow_live=True ถ้าตั้งใจจริง)"
+            )
 
     def _check_symbol(self) -> None:
         info = self.mt5.symbol_info(self.symbol)
@@ -111,12 +113,17 @@ class MT5Broker:
         """ดึงสถานะจริงจาก broker (ใช้ตอนเริ่ม / หลัง reconnect / หลังผิดพลาดแบบกำกวม)"""
         own = self._own_positions()
         if len(own) > 1:
-            raise BrokerError(f"พบ {len(own)} สถานะของ magic นี้ (รองรับ 1) ตรวจใน terminal ก่อน")
-        reference_ticket = expected_ticket if expected_ticket is not None else self._ticket
+            raise BrokerError(
+                f"พบ {len(own)} สถานะของ magic นี้ (รองรับ 1) ตรวจใน terminal ก่อน"
+            )
+        reference_ticket = (
+            expected_ticket if expected_ticket is not None else self._ticket
+        )
         if not own:
             note = (
                 f"สถานะ ticket {reference_ticket} หายจาก broker (โดน SL/ปิดนอกโปรแกรม)"
-                if reference_ticket is not None else None
+                if reference_ticket is not None
+                else None
             )
             self.position, self._ticket = None, None
             return note
@@ -129,7 +136,10 @@ class MT5Broker:
         side = "long" if p.type == self.mt5.POSITION_TYPE_BUY else "short"
         self._ticket = p.ticket
         self.position = Position(
-            side, float(p.volume), float(p.price_open), float(p.sl),
+            side,
+            float(p.volume),
+            float(p.price_open),
+            float(p.sl),
             pd.Timestamp(p.time, unit="s"),
         )
         return note
@@ -159,7 +169,9 @@ class MT5Broker:
         for attempt in range(self.max_retries):
             result = self.mt5.order_send(request)
             if result is None:
-                raise BrokerError(f"order_send คืน None: {self.mt5.last_error()} (เรียก sync())")
+                raise BrokerError(
+                    f"order_send คืน None: {self.mt5.last_error()} (เรียก sync())"
+                )
             if result.retcode == _RETCODE_DONE:
                 return result
             if result.retcode in _RETRYABLE:
@@ -170,8 +182,12 @@ class MT5Broker:
                     request["price"] = tick.ask if is_buy else tick.bid
                 time.sleep(self.retry_sleep)
                 continue
-            raise BrokerError(f"order ถูกปฏิเสธ retcode={result.retcode} {result.comment}")
-        raise BrokerError(f"retry ครบ {self.max_retries} ครั้งแล้วยังไม่สำเร็จ retcode={last.retcode}")
+            raise BrokerError(
+                f"order ถูกปฏิเสธ retcode={result.retcode} {result.comment}"
+            )
+        raise BrokerError(
+            f"retry ครบ {self.max_retries} ครั้งแล้วยังไม่สำเร็จ retcode={last.retcode}"
+        )
 
     def _deals_for(self, ticket: int):
         deals = self.mt5.history_deals_get(position=ticket)
@@ -194,8 +210,14 @@ class MT5Broker:
             reason = "external"
         p = self.position
         trade = Trade(
-            p.side, p.lots, p.entry, float(exit_deal.price),
-            p.entry_time, pd.Timestamp(exit_deal.time, unit="s"), pnl, reason,
+            p.side,
+            p.lots,
+            p.entry,
+            float(exit_deal.price),
+            p.entry_time,
+            pd.Timestamp(exit_deal.time, unit="s"),
+            pnl,
+            reason,
         )
         self.trades.append(trade)
         self.position, self._ticket = None, None
@@ -203,8 +225,13 @@ class MT5Broker:
 
     # ---------- orders (interface เดียวกับ PaperBroker) ----------
     def open(
-        self, side: str, lots: float, price: float, half_spread: float,
-        stop: float, ts: pd.Timestamp,
+        self,
+        side: str,
+        lots: float,
+        price: float,
+        half_spread: float,
+        stop: float,
+        ts: pd.Timestamp,
     ) -> None:
         if self.position is not None:
             raise RuntimeError("มีสถานะเปิดอยู่แล้ว")
@@ -261,7 +288,9 @@ class MT5Broker:
             "action": self.mt5.TRADE_ACTION_DEAL,
             "symbol": self.symbol,
             "volume": self.position.lots,
-            "type": self.mt5.ORDER_TYPE_SELL if closing_long else self.mt5.ORDER_TYPE_BUY,
+            "type": self.mt5.ORDER_TYPE_SELL
+            if closing_long
+            else self.mt5.ORDER_TYPE_BUY,
             "position": self._ticket,
             "price": tick.bid if closing_long else tick.ask,
             "deviation": self.deviation,
@@ -274,8 +303,12 @@ class MT5Broker:
         return self._build_trade(reason_override=reason)
 
     def check_stop(
-        self, o: float = 0.0, h: float = 0.0, l: float = 0.0,
-        half_spread: float = 0.0, ts: Optional[pd.Timestamp] = None,
+        self,
+        o: float = 0.0,
+        h: float = 0.0,
+        l: float = 0.0,
+        half_spread: float = 0.0,
+        ts: Optional[pd.Timestamp] = None,
     ) -> Optional[Trade]:
         """ถ้าสถานะหายจาก broker (โดน SL หรือปิดมือ) -> คืน Trade จากประวัติจริง"""
         if self.position is None:

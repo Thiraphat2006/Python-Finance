@@ -162,8 +162,18 @@ class TraderDB:
                 "INSERT INTO runs (started_at, strategy, symbol, bar_time, signal,"
                 " target_weight, lots_requested, decision, reason, status)"
                 " VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (iso(started_at), strategy, symbol, iso(bar_time), signal,
-                 target_weight, lots_requested, decision, reason, status),
+                (
+                    iso(started_at),
+                    strategy,
+                    symbol,
+                    iso(bar_time),
+                    signal,
+                    target_weight,
+                    lots_requested,
+                    decision,
+                    reason,
+                    status,
+                ),
             )
         return int(cur.lastrowid)
 
@@ -205,8 +215,21 @@ class TraderDB:
                 "INSERT INTO orders (run_id, logged_at, symbol, kind, side, lots,"
                 " requested_price, fill_price, sl, retcode, ticket, comment, ok)"
                 " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (run_id, iso(), symbol, kind, side, lots, requested_price,
-                 fill_price, sl, retcode, ticket, comment, int(ok)),
+                (
+                    run_id,
+                    iso(),
+                    symbol,
+                    kind,
+                    side,
+                    lots,
+                    requested_price,
+                    fill_price,
+                    sl,
+                    retcode,
+                    ticket,
+                    comment,
+                    int(ok),
+                ),
             )
         return int(cur.lastrowid)
 
@@ -219,18 +242,28 @@ class TraderDB:
                 " type, entry, volume, price, profit, commission, swap, fee, reason, logged_at)"
                 " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
-                    _get(deal, "ticket"), _get(deal, "position_id"), _get(deal, "symbol"),
-                    iso(_get(deal, "time")), _get(deal, "type"), _get(deal, "entry"),
-                    _get(deal, "volume"), _get(deal, "price"), _get(deal, "profit"),
-                    _get(deal, "commission"), _get(deal, "swap"), _get(deal, "fee"),
-                    _get(deal, "reason"), iso(),
+                    _get(deal, "ticket"),
+                    _get(deal, "position_id"),
+                    _get(deal, "symbol"),
+                    iso(_get(deal, "time")),
+                    _get(deal, "type"),
+                    _get(deal, "entry"),
+                    _get(deal, "volume"),
+                    _get(deal, "price"),
+                    _get(deal, "profit"),
+                    _get(deal, "commission"),
+                    _get(deal, "swap"),
+                    _get(deal, "fee"),
+                    _get(deal, "reason"),
+                    iso(),
                 ),
             )
         return cur.rowcount == 1
 
     # ---------- quotes / snapshots ----------
-    def log_quote(self, symbol: str, bid: float, ask: float, point: float,
-                  ts: Timeish = None) -> None:
+    def log_quote(
+        self, symbol: str, bid: float, ask: float, point: float, ts: Timeish = None
+    ) -> None:
         """spread_points = (ask - bid) / point (ข้อมูลของข้อ 1.6: ประวัติ spread จริงจาก broker)"""
         spread_points = round((ask - bid) / point, 4)
         with self.conn:
@@ -240,8 +273,9 @@ class TraderDB:
                 (iso(ts), symbol, bid, ask, spread_points),
             )
 
-    def log_snapshot(self, balance: float, equity: float, open_positions: int,
-                     ts: Timeish = None) -> None:
+    def log_snapshot(
+        self, balance: float, equity: float, open_positions: int, ts: Timeish = None
+    ) -> None:
         stamp = iso(ts)
         with self.conn:
             self.conn.execute(
@@ -261,7 +295,9 @@ class TraderDB:
             )
 
     def get_state(self, key: str, default: Optional[str] = None) -> Optional[str]:
-        row = self.conn.execute("SELECT value FROM state WHERE key=?", (key,)).fetchone()
+        row = self.conn.execute(
+            "SELECT value FROM state WHERE key=?", (key,)
+        ).fetchone()
         return row[0] if row else default
 
     # ---------- generic read ----------

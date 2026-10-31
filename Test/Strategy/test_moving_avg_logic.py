@@ -50,7 +50,9 @@ class TestMovingAvgLogic(unittest.TestCase):
 
     def test_short_entries_exist(self):
         """บั๊กเดิม: short_entry เป็น False ตลอดเพราะ filter close > ma200"""
-        out = MovingAvgLogic(self.ind, StrategyConfig(adx_min=15, use_atr_filter=False))()
+        out = MovingAvgLogic(
+            self.ind, StrategyConfig(adx_min=15, use_atr_filter=False)
+        )()
         self.assertGreater(out["long_entry"].sum(), 0)
         self.assertGreater(out["short_entry"].sum(), 0)
 

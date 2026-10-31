@@ -77,9 +77,7 @@ def test_gives_up_with_one_market_closed_alert(monkeypatch, caplog):
     assert code == 0
     assert len(calls) == 3
     assert clock.current == datetime(2026, 1, 1, 0, 10, tzinfo=timezone.utc)
-    assert alerts == [
-        ("warn", "ตลาดปิด/ไม่มี tick ตลอด 10 นาที ไม่ได้ประมวลผลวันนี้")
-    ]
+    assert alerts == [("warn", "ตลาดปิด/ไม่มี tick ตลอด 10 นาที ไม่ได้ประมวลผลวันนี้")]
     assert caplog.messages == ["give up after 3 attempts: market closed / no tick"]
     assert len(backups) == 1
 
@@ -98,9 +96,7 @@ def test_wall_clock_jump_gives_up_without_extra_sleep(monkeypatch):
 
     assert code == 0
     assert len(calls) == 2
-    assert alerts == [
-        ("warn", "ตลาดปิด/ไม่มี tick ตลอด 10 นาที ไม่ได้ประมวลผลวันนี้")
-    ]
+    assert alerts == [("warn", "ตลาดปิด/ไม่มี tick ตลอด 10 นาที ไม่ได้ประมวลผลวันนี้")]
     assert len(backups) == 1
 
 
@@ -166,9 +162,7 @@ def test_init_failure_until_deadline_sends_one_error_and_backs_up_once(
 
     assert code == 1
     assert mt5.initialize_calls == 3
-    assert alerts == [
-        ("XAUUSD", "error", "initialize ล้มเหลวตลอด 10 นาที")
-    ]
+    assert alerts == [("XAUUSD", "error", "initialize ล้มเหลวตลอด 10 นาที")]
     assert len(backups) == 1
 
 
@@ -189,8 +183,12 @@ def test_retry_disabled_makes_one_original_style_call(monkeypatch):
     result = run_daily.TradingResult(1, "init_failed")
 
     monkeypatch.setattr(run_daily, "load_env", lambda: None)
-    monkeypatch.setattr(run_daily, "_run_trading", lambda args: calls.append(args) or result)
-    monkeypatch.setattr(run_daily, "_backup_and_alert", lambda args: backups.append(args))
+    monkeypatch.setattr(
+        run_daily, "_run_trading", lambda args: calls.append(args) or result
+    )
+    monkeypatch.setattr(
+        run_daily, "_backup_and_alert", lambda args: backups.append(args)
+    )
 
     assert run_daily.main(["--no-backup"]) == 1
     assert len(calls) == 1

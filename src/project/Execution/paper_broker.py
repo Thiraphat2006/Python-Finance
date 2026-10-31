@@ -56,8 +56,13 @@ class PaperBroker:
 
     # ---------- orders ----------
     def open(
-        self, side: str, lots: float, price: float, half_spread: float,
-        stop: float, ts: pd.Timestamp,
+        self,
+        side: str,
+        lots: float,
+        price: float,
+        half_spread: float,
+        stop: float,
+        ts: pd.Timestamp,
     ) -> None:
         if self.position is not None:
             raise RuntimeError("มีสถานะเปิดอยู่แล้ว")

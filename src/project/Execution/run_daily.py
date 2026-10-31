@@ -85,19 +85,31 @@ def _run_trading(
                 _alert(args.symbol, "ok", "ตลาดปิด ข้ามรอบ")
             return TradingResult(0, "market_closed")
         spec = SymbolSpec(
-            args.symbol, point=info.point, contract_size=info.trade_contract_size,
-            volume_min=info.volume_min, volume_step=info.volume_step,
+            args.symbol,
+            point=info.point,
+            contract_size=info.trade_contract_size,
+            volume_min=info.volume_min,
+            volume_step=info.volume_step,
             volume_max=info.volume_max,
         )
         broker = MT5Broker(spec, args.symbol, mt5_module=mt5, initialize=False)
         strategy = ScheduledTestStrategy(spec)
         with TraderDB(args.db) as db:
-            bars = fetch_d1_bars(mt5, args.symbol, server_now=get_server_now(mt5, args.symbol))
+            bars = fetch_d1_bars(
+                mt5, args.symbol, server_now=get_server_now(mt5, args.symbol)
+            )
             result = run_once(
-                broker=broker, db=db, cfg=RiskConfig(), strategy=strategy, spec=spec,
-                bars=bars, quote=get_quote(mt5, args.symbol),
+                broker=broker,
+                db=db,
+                cfg=RiskConfig(),
+                strategy=strategy,
+                spec=spec,
+                bars=bars,
+                quote=get_quote(mt5, args.symbol),
                 now=pd.Timestamp.now(tz="UTC").tz_localize(None),
-                mt5=mt5, magic=broker.magic, logger=log,
+                mt5=mt5,
+                magic=broker.magic,
+                logger=log,
             )
         if result.sync_note:
             _alert(args.symbol, "warn", f"สถานะไม่ตรง broker: {result.sync_note}")
@@ -105,7 +117,10 @@ def _run_trading(
             _alert(args.symbol, "error", result.reason)
         elif result.status == "skipped":
             _alert(args.symbol, "ok", "ข้าม (ประมวลผลแล้ว)")
-        elif result.decision == "exit" and result.reason in ("kill_switch", "daily_limit"):
+        elif result.decision == "exit" and result.reason in (
+            "kill_switch",
+            "daily_limit",
+        ):
             _alert(args.symbol, "risk", f"ปิดสถานะ: {result.reason}")
         elif result.decision in ("enter", "exit"):
             action = "เปิดสถานะ" if result.decision == "enter" else "ปิดสถานะ"

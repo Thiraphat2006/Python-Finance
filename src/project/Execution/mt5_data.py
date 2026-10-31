@@ -71,7 +71,11 @@ def add_atr(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
     """ATR แบบ Wilder (ewm alpha=1/period); ถ้าสูตรกลยุทธ์ของคุณต่างจากนี้ ให้ใช้ของคุณแทน"""
     prev_close = df["close"].shift(1)
     tr = pd.concat(
-        [df["high"] - df["low"], (df["high"] - prev_close).abs(), (df["low"] - prev_close).abs()],
+        [
+            df["high"] - df["low"],
+            (df["high"] - prev_close).abs(),
+            (df["low"] - prev_close).abs(),
+        ],
         axis=1,
     ).max(axis=1)
     out = df.copy()
@@ -80,7 +84,10 @@ def add_atr(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
 
 
 def fetch_d1_bars(
-    mt5, symbol: str, count: int = 120, atr_period: int = 14,
+    mt5,
+    symbol: str,
+    count: int = 120,
+    atr_period: int = 14,
     server_now: Optional[pd.Timestamp] = None,
 ) -> pd.DataFrame:
     """แท่ง D1 ที่ปิดแล้วเท่านั้น (ตัดแท่งที่วันที่ตรงกับวันปัจจุบันของ server ซึ่งกำลังก่อตัวอยู่)

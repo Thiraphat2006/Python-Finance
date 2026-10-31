@@ -19,7 +19,13 @@ def make(n=900, drift=0.0005, vol=0.01, seed=0, spread=20.0, start="2018-01-01")
     c = 100 * np.cumprod(1 + rng.normal(drift, vol, n))
     o = np.r_[c[0], c[:-1]]
     return pd.DataFrame(
-        {"open": o, "high": np.maximum(o, c), "low": np.minimum(o, c), "close": c, "spread": spread},
+        {
+            "open": o,
+            "high": np.maximum(o, c),
+            "low": np.minimum(o, c),
+            "close": c,
+            "spread": spread,
+        },
         index=idx,
     )
 
@@ -37,11 +43,18 @@ def test_signal_sign_follows_trailing_return():
 
 
 def test_weights_scale_inversely_with_volatility_and_are_capped():
-    calm, wild = make(vol=0.005, drift=0.001, seed=1), make(vol=0.02, drift=0.001, seed=2)
+    calm, wild = (
+        make(vol=0.005, drift=0.001, seed=1),
+        make(vol=0.02, drift=0.001, seed=2),
+    )
     close = pd.DataFrame({"a": calm["close"], "b": wild["close"]})
-    w = target_weights(close, TsmomConfig(lookback=100, vol_window=30, target_vol=0.10, max_weight=5))
+    w = target_weights(
+        close, TsmomConfig(lookback=100, vol_window=30, target_vol=0.10, max_weight=5)
+    )
     assert w["a"].abs().iloc[-1] > w["b"].abs().iloc[-1]
-    capped = target_weights(close, TsmomConfig(lookback=100, vol_window=30, target_vol=5.0, max_weight=0.3))
+    capped = target_weights(
+        close, TsmomConfig(lookback=100, vol_window=30, target_vol=5.0, max_weight=0.3)
+    )
     assert capped.abs().max().max() <= 0.3 + 1e-12
 
 
@@ -49,7 +62,9 @@ def test_monthly_rebalance_holds_weights_within_month():
     idx = pd.bdate_range("2020-01-01", periods=60)
     w = pd.DataFrame({"x": np.arange(60, dtype=float)}, index=idx)
     m = monthly_rebalanced(w)
-    feb = m.loc["2020-02-01":"2020-02-27", "x"]  # ถือค่าสิ้นเดือน ม.ค. ตลอดเดือน ก.พ. (จนก่อนวันทำการสุดท้าย)
+    feb = m.loc[
+        "2020-02-01":"2020-02-27", "x"
+    ]  # ถือค่าสิ้นเดือน ม.ค. ตลอดเดือน ก.พ. (จนก่อนวันทำการสุดท้าย)
     assert feb.nunique() == 1
     last_jan = w.loc[:"2020-01-31", "x"].iloc[-1]
     assert feb.iloc[0] == last_jan
@@ -76,7 +91,9 @@ def test_costs_reduce_returns_and_stress_costs_more():
     res = run_tsmom(d, pts, CFG)
     assert res["cost"].sum() > 0
     assert res["returns"].sum() < res["gross_returns"].sum()
-    stress = run_tsmom(d, pts, TsmomConfig(lookback=100, vol_window=30, spread_mult=2.0))
+    stress = run_tsmom(
+        d, pts, TsmomConfig(lookback=100, vol_window=30, spread_mult=2.0)
+    )
     assert stress["cost"].sum() == pytest.approx(2 * res["cost"].sum(), rel=1e-6)
 
 
@@ -110,7 +127,9 @@ def test_late_starting_asset_does_not_change_earlier_weights_or_cut_sample():
         both["weights"].loc[days, "a"], solo["weights"].loc[days, "a"]
     )
     # หลัง b active (มีข้อมูลครบ lookback) น้ำหนักต้องไม่เป็น 0 ตลอด
-    late = both["weights"].loc[both["weights"].index > b.index[CFG.lookback + CFG.vol_window + 5], "b"]
+    late = both["weights"].loc[
+        both["weights"].index > b.index[CFG.lookback + CFG.vol_window + 5], "b"
+    ]
     assert late.abs().sum() > 0
 
 

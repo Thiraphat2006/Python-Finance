@@ -44,8 +44,23 @@ def _order(symbol: str, kind: str, side: str, lots: float, ok: bool, **kw: Any) 
 
 
 def _act(
-    *, broker, engine, cfg, strategy, spec, bars, bid, ask, mid, hs, spread_pts,
-    equity, now, other_positions, orders, log,
+    *,
+    broker,
+    engine,
+    cfg,
+    strategy,
+    spec,
+    bars,
+    bid,
+    ask,
+    mid,
+    hs,
+    spread_pts,
+    equity,
+    now,
+    other_positions,
+    orders,
+    log,
 ):
     """คืน (decision, reason, lots_requested, signal)"""
     symbol = spec.symbol
@@ -64,14 +79,41 @@ def _act(
         try:
             trade = broker.close(mid, hs, now, reason)
         except Exception as exc:
-            orders.append(_order(symbol, "close", pos.side, pos.lots, False,
-                                 requested_price=requested, ticket=ticket, comment=str(exc)[:500]))
+            orders.append(
+                _order(
+                    symbol,
+                    "close",
+                    pos.side,
+                    pos.lots,
+                    False,
+                    requested_price=requested,
+                    ticket=ticket,
+                    comment=str(exc)[:500],
+                )
+            )
             raise
-        orders.append(_order(symbol, "close", pos.side, pos.lots, True,
-                             requested_price=requested, fill_price=trade.exit, ticket=ticket,
-                             comment=reason))
-        log.info("ปิดสถานะ %s %s lots=%s ที่ %.2f pnl=%.2f (%s)",
-                 symbol, pos.side, pos.lots, trade.exit, trade.pnl, reason)
+        orders.append(
+            _order(
+                symbol,
+                "close",
+                pos.side,
+                pos.lots,
+                True,
+                requested_price=requested,
+                fill_price=trade.exit,
+                ticket=ticket,
+                comment=reason,
+            )
+        )
+        log.info(
+            "ปิดสถานะ %s %s lots=%s ที่ %.2f pnl=%.2f (%s)",
+            symbol,
+            pos.side,
+            pos.lots,
+            trade.exit,
+            trade.pnl,
+            reason,
+        )
         return "exit", reason, pos.lots, sig
 
     # ---- เข้า ----
@@ -109,15 +151,43 @@ def _act(
         try:
             broker.open(side, lots, mid, hs, stop, now)
         except Exception as exc:
-            orders.append(_order(symbol, "open", side, lots, False, requested_price=est,
-                                 sl=stop, comment=str(exc)[:500]))
+            orders.append(
+                _order(
+                    symbol,
+                    "open",
+                    side,
+                    lots,
+                    False,
+                    requested_price=est,
+                    sl=stop,
+                    comment=str(exc)[:500],
+                )
+            )
             raise
         p = broker.position
-        orders.append(_order(symbol, "open", side, lots, True, requested_price=est,
-                             fill_price=p.entry if p else None, sl=stop,
-                             ticket=getattr(broker, "_ticket", None), comment=sig.reason))
-        log.info("เปิดสถานะ %s %s lots=%s ขอ %.2f เติม %s SL %.2f",
-                 symbol, side, lots, est, p.entry if p else "?", stop)
+        orders.append(
+            _order(
+                symbol,
+                "open",
+                side,
+                lots,
+                True,
+                requested_price=est,
+                fill_price=p.entry if p else None,
+                sl=stop,
+                ticket=getattr(broker, "_ticket", None),
+                comment=sig.reason,
+            )
+        )
+        log.info(
+            "เปิดสถานะ %s %s lots=%s ขอ %.2f เติม %s SL %.2f",
+            symbol,
+            side,
+            lots,
+            est,
+            p.entry if p else "?",
+            stop,
+        )
         return "enter", "ok", lots, sig
 
     return "hold", "ok", None, sig
@@ -173,35 +243,75 @@ def run_once(
     sig, lots_req = Signal(), None
     try:
         decision, reason, lots_req, sig = _act(
-            broker=broker, engine=engine, cfg=cfg, strategy=strategy, spec=spec, bars=bars,
-            bid=bid, ask=ask, mid=mid, hs=hs, spread_pts=spread_pts, equity=equity, now=now,
-            other_positions=other_positions, orders=orders, log=log,
+            broker=broker,
+            engine=engine,
+            cfg=cfg,
+            strategy=strategy,
+            spec=spec,
+            bars=bars,
+            bid=bid,
+            ask=ask,
+            mid=mid,
+            hs=hs,
+            spread_pts=spread_pts,
+            equity=equity,
+            now=now,
+            other_positions=other_positions,
+            orders=orders,
+            log=log,
         )
         status = "done"
     except Exception as exc:
         log.exception("รอบนี้ผิดพลาด")
-        decision, reason, status = "error", f"{type(exc).__name__}: {exc}"[:500], "error"
+        decision, reason, status = (
+            "error",
+            f"{type(exc).__name__}: {exc}"[:500],
+            "error",
+        )
 
     run_id = db.log_run(
-        strategy.name, symbol, key, decision, signal=sig.action,
-        target_weight=sig.target_weight, lots_requested=lots_req,
-        reason=reason, status=status, started_at=now,
+        strategy.name,
+        symbol,
+        key,
+        decision,
+        signal=sig.action,
+        target_weight=sig.target_weight,
+        lots_requested=lots_req,
+        reason=reason,
+        status=status,
+        started_at=now,
     )
     for o in orders:
         db.log_order(run_id=run_id, **o)
 
     for what, fn in (
         ("เซฟสถานะ risk", lambda: save_engine(db, engine)),
-        ("บันทึก snapshot", lambda: db.log_snapshot(
-            broker.cash, broker.equity(mid), broker.open_positions, ts=now)),
+        (
+            "บันทึก snapshot",
+            lambda: db.log_snapshot(
+                broker.cash, broker.equity(mid), broker.open_positions, ts=now
+            ),
+        ),
         ("บันทึก deals", lambda: log_recent_deals(db, mt5, symbol, magic) if mt5 else 0),
-        ("บันทึก ticket สถานะ", lambda: db.set_state(
-            state_key, "" if getattr(broker, "_ticket", None) is None else broker._ticket)),
+        (
+            "บันทึก ticket สถานะ",
+            lambda: db.set_state(
+                state_key,
+                "" if getattr(broker, "_ticket", None) is None else broker._ticket,
+            ),
+        ),
     ):
         try:
             fn()
         except Exception:
             log.exception("%s ไม่สำเร็จ (ไม่กระทบการเทรด)", what)
 
-    log.info("จบรอบ %s %s: %s (%s) status=%s", strategy.name, symbol, decision, reason, status)
+    log.info(
+        "จบรอบ %s %s: %s (%s) status=%s",
+        strategy.name,
+        symbol,
+        decision,
+        reason,
+        status,
+    )
     return RunResult(status, decision, reason, run_id, sync_note)

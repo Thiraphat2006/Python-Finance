@@ -41,11 +41,20 @@ class FakeMT5:
         return (0, "ok")
 
     def account_info(self):
-        return NS(trade_mode=0 if self.demo else 2, equity=self.balance, balance=self.balance)
+        return NS(
+            trade_mode=0 if self.demo else 2, equity=self.balance, balance=self.balance
+        )
 
     def symbol_info(self, s):
-        return NS(visible=True, trade_contract_size=self.contract_size, filling_mode=2,
-                  volume_step=0.01, volume_min=0.01, volume_max=50.0, digits=2)
+        return NS(
+            visible=True,
+            trade_contract_size=self.contract_size,
+            filling_mode=2,
+            volume_step=0.01,
+            volume_min=0.01,
+            volume_max=50.0,
+            digits=2,
+        )
 
     def symbol_select(self, s, v):
         return True
@@ -68,28 +77,58 @@ class FakeMT5:
             px = req["price"]
             sign = 1 if pos.type == 0 else -1
             self.positions.remove(pos)
-            self._deal(pos.ticket, self.DEAL_ENTRY_OUT, px, self.DEAL_REASON_CLIENT,
-                       profit=sign * (px - pos.price_open) * pos.volume * self.contract_size)
+            self._deal(
+                pos.ticket,
+                self.DEAL_ENTRY_OUT,
+                px,
+                self.DEAL_REASON_CLIENT,
+                profit=sign * (px - pos.price_open) * pos.volume * self.contract_size,
+            )
             return NS(retcode=10009, comment="", order=99)
         t = self._next
         self._next += 1
         buy = req["type"] == 0
-        self.positions.append(NS(ticket=t, magic=req["magic"], type=0 if buy else 1,
-                                 volume=req["volume"], price_open=req["price"], sl=req["sl"], time=1_700_000_000))
+        self.positions.append(
+            NS(
+                ticket=t,
+                magic=req["magic"],
+                type=0 if buy else 1,
+                volume=req["volume"],
+                price_open=req["price"],
+                sl=req["sl"],
+                time=1_700_000_000,
+            )
+        )
         self._deal(t, self.DEAL_ENTRY_IN, req["price"], self.DEAL_REASON_CLIENT)
         return NS(retcode=10009, comment="", order=t)
 
     def _deal(self, pid, entry, price, reason, profit=0.0, commission=-0.5, swap=0.0):
-        self.deals.append(NS(position_id=pid, entry=entry, price=price, reason=reason, profit=profit,
-                             commission=commission, swap=swap, fee=0.0, time=1_700_000_100))
+        self.deals.append(
+            NS(
+                position_id=pid,
+                entry=entry,
+                price=price,
+                reason=reason,
+                profit=profit,
+                commission=commission,
+                swap=swap,
+                fee=0.0,
+                time=1_700_000_100,
+            )
+        )
 
     def hit_stop(self):
         """จำลอง broker ตัด SL"""
         pos = self.positions[0]
         sign = 1 if pos.type == 0 else -1
         self.positions.clear()
-        self._deal(pos.ticket, self.DEAL_ENTRY_OUT, pos.sl, self.DEAL_REASON_SL,
-                   profit=sign * (pos.sl - pos.price_open) * pos.volume * self.contract_size)
+        self._deal(
+            pos.ticket,
+            self.DEAL_ENTRY_OUT,
+            pos.sl,
+            self.DEAL_REASON_SL,
+            profit=sign * (pos.sl - pos.price_open) * pos.volume * self.contract_size,
+        )
 
 
 SPEC = NS(contract_size=100.0)
@@ -187,8 +226,17 @@ def test_sync_reports_missing_position():
 
 def test_sync_reports_unexpected_position():
     fake, b = make()
-    fake.positions.append(NS(ticket=7, magic=b.magic, type=0, volume=0.1,
-                              price_open=2000.0, sl=1990.0, time=1_700_000_000))
+    fake.positions.append(
+        NS(
+            ticket=7,
+            magic=b.magic,
+            type=0,
+            volume=0.1,
+            price_open=2000.0,
+            sl=1990.0,
+            time=1_700_000_000,
+        )
+    )
     assert b.sync() == "พบสถานะ ticket 7 ที่โปรแกรมไม่ได้เปิดรอบนี้"
 
 

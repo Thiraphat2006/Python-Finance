@@ -18,7 +18,9 @@ from project.Risk.position_sizing import SymbolSpec
 from project.Risk.risk_engine import RiskConfig, RiskEngine, load_engine, save_engine
 from project.Storage.trader_db import TraderDB
 
-GOLD = SymbolSpec("XAUUSD", point=0.01, contract_size=100, volume_min=0.01, volume_step=0.01)
+GOLD = SymbolSpec(
+    "XAUUSD", point=0.01, contract_size=100, volume_min=0.01, volume_step=0.01
+)
 QUOTE = (2000.0, 2000.3)  # ask 2000.3, ATR 20 -> stop 1960.3, ไม้ 0.01 เสี่ยง $40 = 0.4%
 
 
@@ -32,7 +34,8 @@ MON, TUE, WED, THU, FRI = (T(f"2026-10-{d} 02:00") for d in (26, 27, 28, 29, 30)
 def make_bars(atr=20.0, n=30):
     idx = pd.date_range(end="2026-10-23", periods=n, freq="D")
     return pd.DataFrame(
-        {"open": 2000.0, "high": 2010.0, "low": 1990.0, "close": 2000.0, "atr": atr}, index=idx
+        {"open": 2000.0, "high": 2010.0, "low": 1990.0, "close": 2000.0, "atr": atr},
+        index=idx,
     )
 
 
@@ -45,8 +48,15 @@ def db():
 
 def run(db, broker, now, quote=QUOTE, cfg=None, **kw):
     return run_once(
-        broker=broker, db=db, cfg=cfg or RiskConfig(), strategy=ScheduledTestStrategy(GOLD),
-        spec=GOLD, bars=make_bars(), quote=quote, now=now, **kw,
+        broker=broker,
+        db=db,
+        cfg=cfg or RiskConfig(),
+        strategy=ScheduledTestStrategy(GOLD),
+        spec=GOLD,
+        bars=make_bars(),
+        quote=quote,
+        now=now,
+        **kw,
     )
 
 
@@ -58,10 +68,16 @@ def test_monday_enters_min_lot_with_atr_stop_and_journals(db):
     assert b.position.side == "long" and b.position.lots == 0.01
     assert b.position.stop == pytest.approx(2000.3 - 2 * 20)
     runs = db.query("SELECT * FROM runs")
-    assert len(runs) == 1 and runs[0]["decision"] == "enter" and runs[0]["strategy"] == "test_schedule"
+    assert (
+        len(runs) == 1
+        and runs[0]["decision"] == "enter"
+        and runs[0]["strategy"] == "test_schedule"
+    )
     orders = db.query("SELECT * FROM orders")
     assert len(orders) == 1 and orders[0]["kind"] == "open" and orders[0]["ok"] == 1
-    assert orders[0]["run_id"] == runs[0]["run_id"] and orders[0]["sl"] == pytest.approx(1960.3)
+    assert orders[0]["run_id"] == runs[0]["run_id"] and orders[0][
+        "sl"
+    ] == pytest.approx(1960.3)
     q = db.query("SELECT * FROM quotes")[0]
     assert q["spread_points"] == pytest.approx(30.0)
     snap = db.query("SELECT * FROM account_snapshots")[0]
@@ -73,7 +89,10 @@ def test_same_day_rerun_is_skipped_and_never_doubles_orders(db):
     run(db, b, MON)
     r = run(db, b, MON.replace(hour=9))
     assert (r.status, r.decision) == ("skipped", "skip")
-    assert len(db.query("SELECT * FROM orders")) == 1 and len(db.query("SELECT * FROM runs")) == 1
+    assert (
+        len(db.query("SELECT * FROM orders")) == 1
+        and len(db.query("SELECT * FROM runs")) == 1
+    )
 
 
 def test_full_week_cycle(db):
@@ -165,8 +184,17 @@ def test_sync_note_is_saved_in_run_result(db):
 # ---------- mt5_data ----------
 def _rates(n, start="2026-10-05"):
     t0 = int(pd.Timestamp(start).timestamp())
-    dt = np.dtype([("time", "i8"), ("open", "f8"), ("high", "f8"), ("low", "f8"),
-                   ("close", "f8"), ("tick_volume", "i8"), ("spread", "i4")])
+    dt = np.dtype(
+        [
+            ("time", "i8"),
+            ("open", "f8"),
+            ("high", "f8"),
+            ("low", "f8"),
+            ("close", "f8"),
+            ("tick_volume", "i8"),
+            ("spread", "i4"),
+        ]
+    )
     arr = np.zeros(n, dtype=dt)
     for i in range(n):
         arr[i] = (t0 + i * 86400, 2000 + i, 2010 + i, 1990 + i, 2005 + i, 100, 25)
@@ -175,7 +203,8 @@ def _rates(n, start="2026-10-05"):
 
 def test_fetch_d1_bars_drops_forming_bar_and_adds_atr():
     mt5 = SimpleNamespace(
-        TIMEFRAME_D1=16408, last_error=lambda: (0, ""),
+        TIMEFRAME_D1=16408,
+        last_error=lambda: (0, ""),
         copy_rates_from_pos=lambda s, tf, pos, n: _rates(20),
     )
     forming_day = pd.Timestamp("2026-10-05") + pd.Timedelta(days=19)
@@ -187,7 +216,9 @@ def test_fetch_d1_bars_drops_forming_bar_and_adds_atr():
 def _tick_mt5(tick_time, trade_mode=4):
     return SimpleNamespace(
         SYMBOL_TRADE_MODE_FULL=4,
-        symbol_info_tick=lambda s: SimpleNamespace(time=tick_time, bid=2000.0, ask=2000.4),
+        symbol_info_tick=lambda s: SimpleNamespace(
+            time=tick_time, bid=2000.0, ask=2000.4
+        ),
         symbol_info=lambda s: SimpleNamespace(trade_mode=trade_mode, point=0.01),
     )
 
@@ -255,9 +286,7 @@ def test_market_open_when_tick_changes_with_normal_spread():
     def tick(_symbol):
         nonlocal calls
         calls += 1
-        return SimpleNamespace(
-            time=1 if calls == 1 else 2, bid=2000.0, ask=2000.4
-        )
+        return SimpleNamespace(time=1 if calls == 1 else 2, bid=2000.0, ask=2000.4)
 
     mt5 = SimpleNamespace(
         SYMBOL_TRADE_MODE_FULL=4,
@@ -274,9 +303,7 @@ def test_market_closed_when_changed_tick_has_abnormal_spread():
     def tick(_symbol):
         nonlocal calls
         calls += 1
-        return SimpleNamespace(
-            time=1 if calls == 1 else 2, bid=2000.0, ask=2058.12
-        )
+        return SimpleNamespace(time=1 if calls == 1 else 2, bid=2000.0, ask=2058.12)
 
     mt5 = SimpleNamespace(
         SYMBOL_TRADE_MODE_FULL=4,
@@ -287,22 +314,46 @@ def test_market_closed_when_changed_tick_has_abnormal_spread():
 
 
 def test_add_atr_known_value():
-    df = pd.DataFrame({"open": 1.0, "high": [11] * 20, "low": [1] * 20, "close": [6] * 20})
+    df = pd.DataFrame(
+        {"open": 1.0, "high": [11] * 20, "low": [1] * 20, "close": [6] * 20}
+    )
     assert add_atr(df, 14)["atr"].iloc[-1] == pytest.approx(10.0)  # TR คงที่ 10
 
 
 def test_log_recent_deals_filters_and_dedupes(db):
     def deal(ticket, symbol="XAUUSD", magic=7):
-        return SimpleNamespace(ticket=ticket, position_id=1, symbol=symbol, time=1_761_000_000,
-                               type=0, entry=0, volume=0.01, price=2000.0, profit=0.0,
-                               commission=-0.07, swap=0.0, fee=0.0, reason=0, magic=magic)
+        return SimpleNamespace(
+            ticket=ticket,
+            position_id=1,
+            symbol=symbol,
+            time=1_761_000_000,
+            type=0,
+            entry=0,
+            volume=0.01,
+            price=2000.0,
+            profit=0.0,
+            commission=-0.07,
+            swap=0.0,
+            fee=0.0,
+            reason=0,
+            magic=magic,
+        )
+
     mt5 = SimpleNamespace(
         last_error=lambda: (0, ""),
-        history_deals_get=lambda a, b: [deal(1), deal(2, magic=8), deal(3, symbol="EURUSD"), deal(4)],
+        history_deals_get=lambda a, b: [
+            deal(1),
+            deal(2, magic=8),
+            deal(3, symbol="EURUSD"),
+            deal(4),
+        ],
     )
     assert log_recent_deals(db, mt5, "XAUUSD", 7) == 2
     assert log_recent_deals(db, mt5, "XAUUSD", 7) == 0
-    assert {r["deal_ticket"] for r in db.query("SELECT deal_ticket FROM deals")} == {1, 4}
+    assert {r["deal_ticket"] for r in db.query("SELECT deal_ticket FROM deals")} == {
+        1,
+        4,
+    }
 
 
 # ---------- ต่อกับ MT5Broker จริง (ด้วย MT5 จำลอง) ----------
@@ -315,33 +366,70 @@ class FakeMT5:
 
     def __init__(self):
         self.positions, self.deals = [], []
-        self.balance, self.bid, self.ask, self.clock, self._n = 10_000.0, 2000.0, 2000.3, 1_761_000_000, 1000
+        self.balance, self.bid, self.ask, self.clock, self._n = (
+            10_000.0,
+            2000.0,
+            2000.3,
+            1_761_000_000,
+            1000,
+        )
 
-    def initialize(self): return True
-    def shutdown(self): pass
-    def last_error(self): return (0, "")
-    def symbol_select(self, s, v): return True
+    def initialize(self):
+        return True
+
+    def shutdown(self):
+        pass
+
+    def last_error(self):
+        return (0, "")
+
+    def symbol_select(self, s, v):
+        return True
 
     def account_info(self):
         unreal = sum((self.bid - p.price_open) * p.volume * 100 for p in self.positions)
-        return SimpleNamespace(trade_mode=0, balance=self.balance, equity=self.balance + unreal)
+        return SimpleNamespace(
+            trade_mode=0, balance=self.balance, equity=self.balance + unreal
+        )
 
     def symbol_info(self, s):
-        return SimpleNamespace(visible=True, trade_contract_size=100.0, filling_mode=2,
-                               volume_step=0.01, volume_min=0.01, volume_max=100.0, digits=2,
-                               point=0.01)
+        return SimpleNamespace(
+            visible=True,
+            trade_contract_size=100.0,
+            filling_mode=2,
+            volume_step=0.01,
+            volume_min=0.01,
+            volume_max=100.0,
+            digits=2,
+            point=0.01,
+        )
 
     def symbol_info_tick(self, s):
         return SimpleNamespace(bid=self.bid, ask=self.ask, time=self.clock)
 
-    def positions_get(self, symbol=None): return list(self.positions)
+    def positions_get(self, symbol=None):
+        return list(self.positions)
 
     def _deal(self, pos, entry, price, profit=0.0, comm=-0.07):
         self._n += 1
-        self.deals.append(SimpleNamespace(
-            ticket=self._n, position_id=pos.ticket, symbol="XAUUSD", time=self.clock, type=0,
-            entry=entry, volume=pos.volume, price=price, profit=profit, commission=comm,
-            swap=0.0, fee=0.0, reason=0, magic=pos.magic))
+        self.deals.append(
+            SimpleNamespace(
+                ticket=self._n,
+                position_id=pos.ticket,
+                symbol="XAUUSD",
+                time=self.clock,
+                type=0,
+                entry=entry,
+                volume=pos.volume,
+                price=price,
+                profit=profit,
+                commission=comm,
+                swap=0.0,
+                fee=0.0,
+                reason=0,
+                magic=pos.magic,
+            )
+        )
 
     def order_send(self, req):
         if "position" in req:
@@ -352,9 +440,16 @@ class FakeMT5:
             self.positions.remove(pos)
             return SimpleNamespace(retcode=10009, order=pos.ticket, comment="")
         self._n += 1
-        pos = SimpleNamespace(ticket=self._n, type=self.POSITION_TYPE_BUY, volume=req["volume"],
-                              price_open=self.ask, sl=req["sl"], time=self.clock,
-                              magic=req["magic"], symbol=req["symbol"])
+        pos = SimpleNamespace(
+            ticket=self._n,
+            type=self.POSITION_TYPE_BUY,
+            volume=req["volume"],
+            price_open=self.ask,
+            sl=req["sl"],
+            time=self.clock,
+            magic=req["magic"],
+            symbol=req["symbol"],
+        )
         self.positions.append(pos)
         self._deal(pos, self.DEAL_ENTRY_IN, self.ask)
         return SimpleNamespace(retcode=10009, order=pos.ticket, comment="")
@@ -368,15 +463,25 @@ class FakeMT5:
 def test_end_to_end_with_real_mt5broker_across_two_processes(db):
     fake = FakeMT5()
 
-    def new_process_run(now):  # จำลองรีสตาร์ทโปรแกรมทุกวัน: broker ใหม่ ต้อง sync จาก terminal
-        broker = MT5Broker(GOLD, "XAUUSD", mt5_module=fake, initialize=False, retry_sleep=0)
-        return broker, run(db, broker, now, quote=(fake.bid, fake.ask),
-                           mt5=fake, magic=broker.magic)
+    def new_process_run(
+        now,
+    ):  # จำลองรีสตาร์ทโปรแกรมทุกวัน: broker ใหม่ ต้อง sync จาก terminal
+        broker = MT5Broker(
+            GOLD, "XAUUSD", mt5_module=fake, initialize=False, retry_sleep=0
+        )
+        return broker, run(
+            db, broker, now, quote=(fake.bid, fake.ask), mt5=fake, magic=broker.magic
+        )
 
     broker, r = new_process_run(MON)
     assert r.decision == "enter" and len(fake.positions) == 1
-    assert fake.positions[0].sl == pytest.approx(1960.3) and fake.positions[0].volume == 0.01
-    assert db.query("SELECT fill_price FROM orders")[0]["fill_price"] == pytest.approx(2000.3)
+    assert (
+        fake.positions[0].sl == pytest.approx(1960.3)
+        and fake.positions[0].volume == 0.01
+    )
+    assert db.query("SELECT fill_price FROM orders")[0]["fill_price"] == pytest.approx(
+        2000.3
+    )
 
     fake.bid, fake.ask, fake.clock = 2010.0, 2010.3, fake.clock + 86400
     broker, r = new_process_run(TUE)
@@ -387,7 +492,9 @@ def test_end_to_end_with_real_mt5broker_across_two_processes(db):
 
     deals = db.query("SELECT entry FROM deals ORDER BY deal_ticket")
     assert [d["entry"] for d in deals] == [0, 1]  # IN แล้ว OUT ถูกบันทึกครบ
-    assert [o["kind"] for o in db.query("SELECT kind FROM orders ORDER BY order_id")] == ["open", "close"]
+    assert [
+        o["kind"] for o in db.query("SELECT kind FROM orders ORDER BY order_id")
+    ] == ["open", "close"]
     close_order = db.query("SELECT * FROM orders WHERE kind='close'")[0]
     assert close_order["requested_price"] == pytest.approx(fake.bid)
     # รันซ้ำวันเดียวกัน ต้องไม่เปิดออเดอร์เพิ่มแม้ broker ใหม่

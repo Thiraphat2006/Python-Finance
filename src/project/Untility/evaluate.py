@@ -38,7 +38,9 @@ def evaluate(
     shorts=(True, False),
     **bt_kwargs,
 ) -> dict:
-    ind = MovingAvg(raw).compute_indicators()  # indicator ใช้เฉพาะอดีต จึงคำนวณรวมแล้วค่อยตัดได้
+    ind = MovingAvg(
+        raw
+    ).compute_indicators()  # indicator ใช้เฉพาะอดีต จึงคำนวณรวมแล้วค่อยตัดได้
     cut = pd.Timestamp(split)
 
     rows = []
@@ -76,18 +78,30 @@ def evaluate(
         else pd.DataFrame()
     )
     r = pf.returns()
-    yearly = ((1 + r).groupby(r.index.year).prod() - 1).mul(100).round(1).rename("return_%")
+    yearly = (
+        ((1 + r).groupby(r.index.year).prod() - 1).mul(100).round(1).rename("return_%")
+    )
 
     print(f"split = {split}  (ฝึกก่อนวันนี้ / ทดสอบหลังวันนี้)")
     print("\nทุก config เรียงตาม train_sharpe:")
     print(grid.to_string(index=False))
     print(f"\nเลือกจากช่วงฝึก: {best_cfg}")
-    print(f"  -> train sharpe {best['train_sharpe']} | TEST sharpe {best['test_sharpe']} "
-          f"({int(best['test_trades'])} trades)")
+    print(
+        f"  -> train sharpe {best['train_sharpe']} | TEST sharpe {best['test_sharpe']} "
+        f"({int(best['test_trades'])} trades)"
+    )
     print("\nแยก long/short (ทั้งช่วง):\n", by_dir)
     print("\nผลรายปี %:\n", yearly)
-    print("\nวิธีอ่าน: ถ้า test_sharpe ต่ำกว่า train_sharpe มาก หรือติดลบ = ผลช่วงฝึกเป็นแค่โชค/overfit")
-    return {"grid": grid, "best_cfg": best_cfg, "by_direction": by_dir, "yearly": yearly, "pf": pf}
+    print(
+        "\nวิธีอ่าน: ถ้า test_sharpe ต่ำกว่า train_sharpe มาก หรือติดลบ = ผลช่วงฝึกเป็นแค่โชค/overfit"
+    )
+    return {
+        "grid": grid,
+        "best_cfg": best_cfg,
+        "by_direction": by_dir,
+        "yearly": yearly,
+        "pf": pf,
+    }
 
 
 def _ann_sharpe(r: pd.Series) -> float:
@@ -151,17 +165,31 @@ def walk_forward(
         if not rows:
             break
 
-        eligible = [x for x in rows if x["train"]["trades"] >= MIN_TRAIN_TRADES
-                    and not np.isnan(x["train"]["sharpe"])]
-        pool = eligible if eligible else [x for x in rows if not np.isnan(x["train"]["sharpe"])]
+        eligible = [
+            x
+            for x in rows
+            if x["train"]["trades"] >= MIN_TRAIN_TRADES
+            and not np.isnan(x["train"]["sharpe"])
+        ]
+        pool = (
+            eligible
+            if eligible
+            else [x for x in rows if not np.isnan(x["train"]["sharpe"])]
+        )
         if not pool:
             t0 = t0 + pd.DateOffset(years=test_years)
             continue
         best = max(pool, key=lambda x: x["train"]["sharpe"])
 
-        test_sharpes = [x["test"]["sharpe"] for x in rows if not np.isnan(x["test"]["sharpe"])]
-        pf_te = back_test(sigs[best["cfg"]][(sigs[best["cfg"]].index >= t1)
-                                            & (sigs[best["cfg"]].index < t2)], **bt_kwargs)
+        test_sharpes = [
+            x["test"]["sharpe"] for x in rows if not np.isnan(x["test"]["sharpe"])
+        ]
+        pf_te = back_test(
+            sigs[best["cfg"]][
+                (sigs[best["cfg"]].index >= t1) & (sigs[best["cfg"]].index < t2)
+            ],
+            **bt_kwargs,
+        )
         oos_returns.append(pf_te.returns())
 
         folds.append(
@@ -177,7 +205,8 @@ def walk_forward(
                 "test_maxdd_%": best["test"]["maxdd_%"],
                 "test_trades": best["test"]["trades"],
                 "median_test_sharpe_all_cfg": round(float(np.median(test_sharpes)), 2)
-                if test_sharpes else np.nan,
+                if test_sharpes
+                else np.nan,
             }
         )
         t0 = t0 + pd.DateOffset(years=test_years)
@@ -202,7 +231,12 @@ def walk_forward(
         "avg_train_sharpe": round(float(folds_df["train_sharpe"].mean()), 2),
         "avg_test_sharpe": round(float(folds_df["test_sharpe"].mean()), 2),
     }
-    oos_yearly = ((1 + oos).groupby(oos.index.year).prod() - 1).mul(100).round(1).rename("return_%")
+    oos_yearly = (
+        ((1 + oos).groupby(oos.index.year).prod() - 1)
+        .mul(100)
+        .round(1)
+        .rename("return_%")
+    )
 
     print(f"walk-forward: ฝึก {train_years} ปี / ทดสอบ {test_years} ปี")
     print(folds_df.to_string(index=False))
@@ -210,7 +244,14 @@ def walk_forward(
     for k, v in oos_summary.items():
         print(f"  {k}: {v}")
     print("\nผล OOS รายปี %:\n", oos_yearly)
-    print("\nวิธีอ่าน: avg_test_sharpe ต่ำกว่า avg_train_sharpe มาก = overfit; "
-          "folds_beat_median ~ครึ่งหนึ่ง = การเลือก config ไม่ได้เพิ่มคุณค่า; "
-          "oos_sharpe < ~0.5 และ folds_positive ไม่ถึงส่วนใหญ่ = ยังไม่มี edge")
-    return {"folds": folds_df, "oos_summary": oos_summary, "oos_yearly": oos_yearly, "oos_returns": oos}
+    print(
+        "\nวิธีอ่าน: avg_test_sharpe ต่ำกว่า avg_train_sharpe มาก = overfit; "
+        "folds_beat_median ~ครึ่งหนึ่ง = การเลือก config ไม่ได้เพิ่มคุณค่า; "
+        "oos_sharpe < ~0.5 และ folds_positive ไม่ถึงส่วนใหญ่ = ยังไม่มี edge"
+    )
+    return {
+        "folds": folds_df,
+        "oos_summary": oos_summary,
+        "oos_yearly": oos_yearly,
+        "oos_returns": oos,
+    }

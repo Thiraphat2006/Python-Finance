@@ -6,7 +6,9 @@ from project.Execution.replay import run_paper
 from project.Risk.position_sizing import SymbolSpec, atr_stop, position_size
 from project.Risk.risk_engine import RiskConfig, RiskEngine
 
-GOLD = SymbolSpec("XAUUSD", point=0.01, contract_size=100, volume_min=0.01, volume_step=0.01)
+GOLD = SymbolSpec(
+    "XAUUSD", point=0.01, contract_size=100, volume_min=0.01, volume_step=0.01
+)
 
 
 # ---------- position sizing ----------
@@ -87,7 +89,8 @@ def test_broker_stop_gap_fills_at_open():
 def synthetic(n=40):
     idx = pd.date_range("2024-01-01", periods=n, freq="h")
     df = pd.DataFrame(
-        {"open": 100.0, "high": 100.0, "low": 100.0, "close": 100.0, "atr": 5.0}, index=idx
+        {"open": 100.0, "high": 100.0, "low": 100.0, "close": 100.0, "atr": 5.0},
+        index=idx,
     )
     for c in ("long_entry", "short_entry", "exit_long", "exit_short"):
         df[c] = False
@@ -112,7 +115,9 @@ def test_replay_rejects_after_daily_limit():
     df.loc[df.index[2], "long_entry"] = True
     df.loc[df.index[4], "low"] = 80.0
     df.loc[df.index[8], "long_entry"] = True  # ควรถูกปฏิเสธ (วันเดียวกัน)
-    r = run_paper(df, GOLD, RiskConfig(risk_per_trade=0.015, daily_loss_limit=0.01), 10_000)
+    r = run_paper(
+        df, GOLD, RiskConfig(risk_per_trade=0.015, daily_loss_limit=0.01), 10_000
+    )
     assert len(r.trades) == 1
     assert r.rejections.get("daily_loss_limit") == 1
 

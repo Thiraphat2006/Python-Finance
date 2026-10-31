@@ -95,7 +95,9 @@ def monthly_rebalanced(weights: pd.DataFrame) -> pd.DataFrame:
     """ถือน้ำหนักของวันทำการสุดท้ายของแต่ละเดือน จนถึงสิ้นเดือนถัดไป (วัน t รู้ที่ปิดวัน t)"""
     idx = weights.index
     month = idx.to_period("M")
-    is_last = pd.Series(month, index=idx) != pd.Series(month, index=idx).shift(-1)  # วันสุดท้ายของเดือนในข้อมูล
+    is_last = pd.Series(month, index=idx) != pd.Series(month, index=idx).shift(
+        -1
+    )  # วันสุดท้ายของเดือนในข้อมูล
     snap = weights.copy()
     snap.loc[~is_last.to_numpy()] = np.nan  # เหลือเฉพาะแถววันสุดท้ายของเดือน
     return snap.ffill().fillna(0.0)
@@ -132,7 +134,11 @@ def run_tsmom(
     half_spread = pd.DataFrame(
         {
             s: (
-                data[s]["spread"].astype(float) * cfg.spread_mult * points[s] / 2 / opens[s]
+                data[s]["spread"].astype(float)
+                * cfg.spread_mult
+                * points[s]
+                / 2
+                / opens[s]
                 if "spread" in data[s].columns
                 else 0.0
             )
@@ -144,7 +150,11 @@ def run_tsmom(
 
     net = (gross - cost).dropna()
     # ตัดช่วงอุ่นเครื่อง (ยังไม่มีสัญญาณ) ออกจากการวัดผล
-    first_active = held.abs().sum(axis=1).gt(0).idxmax() if held.abs().sum().sum() > 0 else net.index[0]
+    first_active = (
+        held.abs().sum(axis=1).gt(0).idxmax()
+        if held.abs().sum().sum() > 0
+        else net.index[0]
+    )
     net = net.loc[net.index >= first_active]
     gross = gross.dropna().loc[net.index]
     return {
@@ -161,7 +171,12 @@ def metrics(returns: pd.Series, periods_per_year: Optional[float] = None) -> dic
     """periods_per_year=None -> นับจำนวนแท่งต่อปีจริงจากข้อมูล (ไม่ hardcode 252)"""
     r = returns.dropna()
     if len(r) < 2 or r.std() == 0:
-        return {"sharpe": np.nan, "return_%": 0.0, "maxdd_%": 0.0, "positive_years_%": np.nan}
+        return {
+            "sharpe": np.nan,
+            "return_%": 0.0,
+            "maxdd_%": 0.0,
+            "positive_years_%": np.nan,
+        }
     if periods_per_year is None:
         years = max((r.index[-1] - r.index[0]).days / 365.25, 1e-9)
         periods_per_year = len(r) / years
@@ -198,7 +213,9 @@ def evaluate_pass(
             base["positive_years_%"] >= PASS_POSITIVE_YEARS * 100
         ),
         f"max DD < {PASS_MAX_DD:.0%}": bool(base["maxdd_%"] < PASS_MAX_DD * 100),
-        f"stress sharpe > {PASS_STRESS_SHARPE}": bool(stress["sharpe"] > PASS_STRESS_SHARPE),
+        f"stress sharpe > {PASS_STRESS_SHARPE}": bool(
+            stress["sharpe"] > PASS_STRESS_SHARPE
+        ),
     }
     return {
         "base": base,

@@ -8,7 +8,9 @@ log = logging.getLogger(__name__)
 
 
 def load_env(path=None):
-    env_path = Path(path) if path is not None else Path(__file__).resolve().parents[3] / ".env"
+    env_path = (
+        Path(path) if path is not None else Path(__file__).resolve().parents[3] / ".env"
+    )
     if not env_path.is_file():
         return
 

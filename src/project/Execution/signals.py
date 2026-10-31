@@ -21,9 +21,13 @@ from project.Risk.position_sizing import SymbolSpec
 class Signal:
     action: str = "hold"  # enter_long | enter_short | exit | hold
     reason: str = "ok"
-    lots: Optional[float] = None  # None = ให้ fixed fractional คำนวณ; มีค่า = เพดานจากกลยุทธ์ (min กับ fixed fractional)
+    lots: Optional[float] = (
+        None  # None = ให้ fixed fractional คำนวณ; มีค่า = เพดานจากกลยุทธ์ (min กับ fixed fractional)
+    )
     target_weight: Optional[float] = None  # ไว้บันทึกลง runs (TSMOM)
-    ignore_risk_sizing: bool = False  # True = ใช้ lots ตรง ๆ (โหมดทดสอบ) แต่ยังผ่าน risk engine ทุกกฎ
+    ignore_risk_sizing: bool = (
+        False  # True = ใช้ lots ตรง ๆ (โหมดทดสอบ) แต่ยังผ่าน risk engine ทุกกฎ
+    )
 
 
 class ScheduledTestStrategy:
@@ -64,7 +68,9 @@ class ScheduledTestStrategy:
             return Signal("hold")
         if wd in self.entry_weekdays:
             return Signal(
-                f"enter_{self.side}", "schedule",
-                lots=self.spec.volume_min, ignore_risk_sizing=True,
+                f"enter_{self.side}",
+                "schedule",
+                lots=self.spec.volume_min,
+                ignore_risk_sizing=True,
             )
         return Signal("hold")

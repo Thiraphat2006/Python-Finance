@@ -77,7 +77,9 @@ class RiskEngine:
         dd = self.drawdown(equity)
         if not self.killed and dd >= self.cfg.max_drawdown_kill:
             self.killed = True
-            self.kill_reason = f"max drawdown {dd:.1%} >= {self.cfg.max_drawdown_kill:.1%}"
+            self.kill_reason = (
+                f"max drawdown {dd:.1%} >= {self.cfg.max_drawdown_kill:.1%}"
+            )
 
     def reset_kill(self) -> None:
         """ให้คนเรียกเองหลังตรวจสอบแล้วเท่านั้น (ห้ามเรียกจากโค้ดเทรดอัตโนมัติ)
@@ -105,7 +107,11 @@ class RiskEngine:
 
     # ---------- metrics ----------
     def drawdown(self, equity: float) -> float:
-        return (self.peak_equity - equity) / self.peak_equity if self.peak_equity > 0 else 0.0
+        return (
+            (self.peak_equity - equity) / self.peak_equity
+            if self.peak_equity > 0
+            else 0.0
+        )
 
     def daily_loss(self, equity: float) -> float:
         if self.day_start_equity <= 0:
@@ -157,7 +163,9 @@ def save_engine(db: Any, engine: RiskEngine, prefix: str = "risk.") -> None:
         db.set_state(prefix + k, v)
 
 
-def load_engine(db: Any, cfg: RiskConfig, equity: float, prefix: str = "risk.") -> RiskEngine:
+def load_engine(
+    db: Any, cfg: RiskConfig, equity: float, prefix: str = "risk."
+) -> RiskEngine:
     """โหลดสถานะที่บันทึกไว้ ถ้ายังไม่เคยบันทึก (ครั้งแรก) สร้างใหม่จาก equity ปัจจุบัน"""
     engine = RiskEngine(cfg, equity)
     keys = ["peak_equity", "day", "day_start_equity", "killed", "kill_reason"]

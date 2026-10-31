@@ -138,8 +138,15 @@ def run_matrix(
         print(f"[{i}/{len(pairs)}] {symbol} {tf_name} ...", end=" ", flush=True)
         try:
             row, folds = _run_pair(
-                symbol, tf_name, date_from, date_to, terminal_path, train_years, test_years,
-                fix_spread, extra_spread_points,
+                symbol,
+                tf_name,
+                date_from,
+                date_to,
+                terminal_path,
+                train_years,
+                test_years,
+                fix_spread,
+                extra_spread_points,
             )
             rows.append(row)
             if len(folds):
@@ -147,8 +154,12 @@ def run_matrix(
             print(f"เสร็จ ({time.time() - t0:.0f} วินาที)")
         except Exception as e:  # noqa: BLE001 - อยากให้ทั้งชุดรันต่อ
             rows.append(
-                {"symbol": symbol, "tf": tf_name, "pass": False,
-                 "note": f"ERROR {type(e).__name__}: {e}"}
+                {
+                    "symbol": symbol,
+                    "tf": tf_name,
+                    "pass": False,
+                    "note": f"ERROR {type(e).__name__}: {e}",
+                }
             )
             print(f"ข้าม ({type(e).__name__}: {e})")
 
@@ -171,8 +182,9 @@ def run_matrix(
     )
     print(f"ลองทั้งหมด {len(pairs)} คู่ ผ่าน {n_pass} คู่")
     if n_pass:
-        print("คู่ที่ผ่านต้องยืนยันซ้ำด้วยข้อมูลช่วงอื่น/สินทรัพย์ใกล้เคียง "
-              "เพราะลองหลายคู่ย่อมมีบางคู่ดูดีโดยบังเอิญ")
+        print(
+            "คู่ที่ผ่านต้องยืนยันซ้ำด้วยข้อมูลช่วงอื่น/สินทรัพย์ใกล้เคียง เพราะลองหลายคู่ย่อมมีบางคู่ดูดีโดยบังเอิญ"
+        )
     print(f"บันทึกแล้วที่ {out / 'summary.csv'} และ {out / 'folds.csv'}")
     return summary, folds_df
 

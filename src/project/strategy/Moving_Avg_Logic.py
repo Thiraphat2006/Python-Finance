@@ -37,7 +37,9 @@ class MovingAvgLogic:
             cols += ["atr", "atr_ma"]
         missing = [c for c in cols if c not in self.df.columns]
         if missing:
-            raise ValueError(f"DataFrame is missing required columns: {', '.join(missing)}")
+            raise ValueError(
+                f"DataFrame is missing required columns: {', '.join(missing)}"
+            )
         if self.cfg.exit_mode not in ("opposite_trend", "ema_cross"):
             raise ValueError("exit_mode must be 'opposite_trend' or 'ema_cross'")
 

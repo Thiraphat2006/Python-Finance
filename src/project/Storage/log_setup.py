@@ -22,7 +22,10 @@ def setup_logging(
     fmt = logging.Formatter(_FORMAT)
 
     file_handler = RotatingFileHandler(
-        Path(log_dir) / f"{name}.log", maxBytes=1_000_000, backupCount=5, encoding="utf-8"
+        Path(log_dir) / f"{name}.log",
+        maxBytes=1_000_000,
+        backupCount=5,
+        encoding="utf-8",
     )
     file_handler.setFormatter(fmt)
     console = logging.StreamHandler()

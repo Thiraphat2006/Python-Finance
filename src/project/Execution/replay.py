@@ -75,7 +75,9 @@ def run_paper(
     lows, closes = _f(sig, "low"), _f(sig, "close")
     prev_atr = sig["atr"].shift(1).to_numpy(dtype=float)
     spreads = (
-        _f(sig, "spread") if "spread" in sig.columns else np.zeros(len(sig), dtype=float)
+        _f(sig, "spread")
+        if "spread" in sig.columns
+        else np.zeros(len(sig), dtype=float)
     )
     p_long, p_short = _b(sig, "long_entry"), _b(sig, "short_entry")
     p_exit_long, p_exit_short = _b(sig, "exit_long"), _b(sig, "exit_short")

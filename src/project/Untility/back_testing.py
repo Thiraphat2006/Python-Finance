@@ -97,5 +97,5 @@ if __name__ == "__main__":
     r = run_paper(sig, SymbolSpec("XAUUSD"), RiskConfig())
     print(r.summary())
 
-    print(r.trades["pnl"].min())          # ควรอยู่ราว -50 ถึง -60 (0.5% ของ 10,000 + spread/gap)
+    print(r.trades["pnl"].min())  # ควรอยู่ราว -50 ถึง -60 (0.5% ของ 10,000 + spread/gap)
     print(r.trades["reason"].value_counts())  # ดูสัดส่วน stop / signal

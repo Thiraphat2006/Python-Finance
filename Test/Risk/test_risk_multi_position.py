@@ -66,14 +66,21 @@ def test_defaults_unchanged_single_position():
 
 # ---------- คำนวณความเสี่ยงของสถานะที่ถืออยู่ ----------
 def test_position_risk_long_short_and_locked_profit():
-    assert position_risk_money(pos("long", 0.1, 2000, 1980), GOLD) == pytest.approx(200.0)
-    assert position_risk_money(pos("short", 0.1, 2000, 2020), GOLD) == pytest.approx(200.0)
+    assert position_risk_money(pos("long", 0.1, 2000, 1980), GOLD) == pytest.approx(
+        200.0
+    )
+    assert position_risk_money(pos("short", 0.1, 2000, 2020), GOLD) == pytest.approx(
+        200.0
+    )
     # stop เลื่อนไปอยู่ฝั่งกำไรแล้ว ไม่มีความเสี่ยงเหลือ (ไม่เป็นค่าลบ)
     assert position_risk_money(pos("long", 0.1, 2000, 2010), GOLD) == 0.0
 
 
 def test_open_risk_fraction_sums_positions():
-    items = [(pos("long", 0.1, 2000, 1990), GOLD), (pos("short", 0.05, 2000, 2020), GOLD)]
+    items = [
+        (pos("long", 0.1, 2000, 1990), GOLD),
+        (pos("short", 0.05, 2000, 2020), GOLD),
+    ]
     # 100 + 100 = 200 จาก equity 10,000 = 2%
     assert open_risk_fraction(items, 10_000) == pytest.approx(0.02)
     assert open_risk_fraction([], 10_000) == 0.0

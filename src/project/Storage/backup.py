@@ -38,7 +38,8 @@ def _content_digest(connection: sqlite3.Connection) -> str:
 def _newest_backup(destination: Path) -> Path | None:
     pattern = re.compile(r"^trader-\d{4}-\d{2}-\d{2}\.db$")
     candidates = [
-        path for path in destination.iterdir()
+        path
+        for path in destination.iterdir()
         if path.is_file() and pattern.fullmatch(path.name)
     ]
     return max(candidates, key=lambda path: path.name, default=None)
@@ -80,7 +81,9 @@ def backup_database(
             try:
                 uri = f"file:{newest.resolve().as_posix()}?mode=ro"
                 with closing(sqlite3.connect(uri, uri=True)) as old_conn:
-                    old_integrity = old_conn.execute("PRAGMA integrity_check").fetchone()
+                    old_integrity = old_conn.execute(
+                        "PRAGMA integrity_check"
+                    ).fetchone()
                     if old_integrity is not None and old_integrity[0] == "ok":
                         if _content_digest(old_conn) == new_digest:
                             unchanged = True
@@ -135,7 +138,9 @@ def backup_logs(
     temporary = destination / f"{name}.tmp"
     log = logging.getLogger(__name__)
     try:
-        with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        with zipfile.ZipFile(
+            temporary, "w", compression=zipfile.ZIP_DEFLATED
+        ) as archive:
             for path in files:
                 try:
                     archive.write(path, arcname=path.name)
@@ -170,7 +175,11 @@ def prune(
         return
     destination = Path(dest_dir)
     candidates = sorted(
-        (path for path in destination.iterdir() if path.is_file() and regex.fullmatch(path.name)),
+        (
+            path
+            for path in destination.iterdir()
+            if path.is_file() and regex.fullmatch(path.name)
+        ),
         key=lambda path: path.name,
         reverse=True,
     )
@@ -201,7 +210,9 @@ def run_backup(
         log.info("Database backup skipped: source does not exist")
     else:
         try:
-            db_result, db_changed = backup_database(db_path_obj, dest_dir, now=current, keep=keep)
+            db_result, db_changed = backup_database(
+                db_path_obj, dest_dir, now=current, keep=keep
+            )
             log.info("Database backup complete: %s", db_result.name)
         except Exception as exc:
             db_error = exc
@@ -234,4 +245,6 @@ def run_backup(
     summary = "backup ok: " + ", ".join(parts)
     if log_error is not None or db_error is not None:
         summary = "backup FAILED: " + ", ".join(parts)
-    return BackupResult(db_error is None and log_error is None, summary[:300], changed=db_changed)
+    return BackupResult(
+        db_error is None and log_error is None, summary[:300], changed=db_changed
+    )

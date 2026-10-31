@@ -17,7 +17,9 @@ def db():
 
 
 def test_schema_created_with_version(db):
-    tables = {r["name"] for r in db.query("SELECT name FROM sqlite_master WHERE type='table'")}
+    tables = {
+        r["name"] for r in db.query("SELECT name FROM sqlite_master WHERE type='table'")
+    }
     assert {"runs", "orders", "deals", "quotes", "account_snapshots", "state"} <= tables
     assert db.conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
 
@@ -47,7 +49,9 @@ def test_last_processed_bar_ignores_errors(db):
     db.log_run("tsmom", "XAUUSD", "2026-10-23", "error", status="error")
     assert db.last_processed_bar("tsmom", "XAUUSD").startswith("2026-10-22")
     assert db.already_processed("tsmom", "XAUUSD", "2026-10-22")
-    assert not db.already_processed("tsmom", "XAUUSD", "2026-10-23")  # รอบที่ error ต้องรันใหม่ได้
+    assert not db.already_processed(
+        "tsmom", "XAUUSD", "2026-10-23"
+    )  # รอบที่ error ต้องรันใหม่ได้
     assert not db.already_processed("tsmom", "EURUSD", "2026-10-22")
 
 
@@ -55,17 +59,38 @@ def test_order_requires_existing_run(db):
     with pytest.raises(sqlite3.IntegrityError):
         db.log_order("XAUUSD", "open", "long", 0.01, ok=True, run_id=999)
     run_id = db.log_run("test", "XAUUSD", "2026-10-26", "enter")
-    oid = db.log_order("XAUUSD", "open", "long", 0.01, ok=True, run_id=run_id,
-                       requested_price=2000.0, fill_price=2000.3, sl=1980.0,
-                       retcode=10009, ticket=123)
+    oid = db.log_order(
+        "XAUUSD",
+        "open",
+        "long",
+        0.01,
+        ok=True,
+        run_id=run_id,
+        requested_price=2000.0,
+        fill_price=2000.3,
+        sl=1980.0,
+        retcode=10009,
+        ticket=123,
+    )
     row = db.query("SELECT * FROM orders WHERE order_id=?", (oid,))[0]
     assert row["fill_price"] == 2000.3 and row["ok"] == 1
 
 
 def test_log_deal_idempotent_and_accepts_namedtuple_like(db):
     deal = SimpleNamespace(
-        ticket=555, position_id=123, symbol="XAUUSD", time=1_761_000_000, type=1, entry=1,
-        volume=0.01, price=2010.5, profit=10.0, commission=-0.07, swap=-0.2, fee=0.0, reason=4,
+        ticket=555,
+        position_id=123,
+        symbol="XAUUSD",
+        time=1_761_000_000,
+        type=1,
+        entry=1,
+        volume=0.01,
+        price=2010.5,
+        profit=10.0,
+        commission=-0.07,
+        swap=-0.2,
+        fee=0.0,
+        reason=4,
     )
     assert db.log_deal(deal) is True
     assert db.log_deal(deal) is False  # log ซ้ำ ไม่เพิ่มแถว
@@ -76,7 +101,9 @@ def test_log_deal_idempotent_and_accepts_namedtuple_like(db):
 
 def test_quote_spread_points_and_dedupe(db):
     db.log_quote("XAUUSD", 2000.00, 2000.25, point=0.01, ts="2026-10-26 04:05:00")
-    db.log_quote("XAUUSD", 2000.00, 2000.30, point=0.01, ts="2026-10-26 04:05:00")  # เวลาเดิม ข้าม
+    db.log_quote(
+        "XAUUSD", 2000.00, 2000.30, point=0.01, ts="2026-10-26 04:05:00"
+    )  # เวลาเดิม ข้าม
     rows = db.query("SELECT * FROM quotes")
     assert len(rows) == 1 and rows[0]["spread_points"] == pytest.approx(25.0)
 

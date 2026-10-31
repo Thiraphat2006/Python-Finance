@@ -22,7 +22,10 @@ def test_database_backup_is_wal_safe_and_integrity_checked(tmp_path):
         db.set_state("two", "2")
         result, changed = backup_database(source, tmp_path / "backups", now=NOW)
         with sqlite3.connect(result) as copy:
-            assert copy.execute("SELECT value FROM state ORDER BY key").fetchall() == [("1",), ("2",)]
+            assert copy.execute("SELECT value FROM state ORDER BY key").fetchall() == [
+                ("1",),
+                ("2",),
+            ]
             assert copy.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
             assert changed is True
     assert not list((tmp_path / "backups").glob("*-wal"))
@@ -98,7 +101,11 @@ def test_database_backup_corrupt_newest_backup_is_replaced(tmp_path):
 def test_database_backup_survives_prune_failure(tmp_path, monkeypatch):
     source = tmp_path / "t.db"
     TraderDB(source).close()
-    monkeypatch.setattr(backup_module, "prune", lambda *args: (_ for _ in ()).throw(PermissionError("locked")))
+    monkeypatch.setattr(
+        backup_module,
+        "prune",
+        lambda *args: (_ for _ in ()).throw(PermissionError("locked")),
+    )
 
     result, _ = backup_database(source, tmp_path / "backups", now=NOW)
 
@@ -109,7 +116,11 @@ def test_logs_backup_survives_prune_failure(tmp_path, monkeypatch):
     logs = tmp_path / "logs"
     logs.mkdir()
     (logs / "a.log").write_text("a")
-    monkeypatch.setattr(backup_module, "prune", lambda *args: (_ for _ in ()).throw(PermissionError("locked")))
+    monkeypatch.setattr(
+        backup_module,
+        "prune",
+        lambda *args: (_ for _ in ()).throw(PermissionError("locked")),
+    )
 
     result = backup_logs(logs, tmp_path / "out", now=NOW)
 
@@ -119,9 +130,15 @@ def test_logs_backup_survives_prune_failure(tmp_path, monkeypatch):
 def test_run_backup_is_ok_when_prune_fails(tmp_path, monkeypatch):
     source = tmp_path / "t.db"
     TraderDB(source).close()
-    monkeypatch.setattr(backup_module, "prune", lambda *args: (_ for _ in ()).throw(PermissionError("locked")))
+    monkeypatch.setattr(
+        backup_module,
+        "prune",
+        lambda *args: (_ for _ in ()).throw(PermissionError("locked")),
+    )
 
-    result = run_backup(source, tmp_path / "missing-logs", tmp_path / "backups", now=NOW)
+    result = run_backup(
+        source, tmp_path / "missing-logs", tmp_path / "backups", now=NOW
+    )
 
     assert result.ok is True
 
@@ -136,7 +153,9 @@ def test_prune_does_not_delete_unrelated_files(tmp_path):
     assert (tmp_path / "notes.txt").exists() and (tmp_path / "other.db").exists()
 
 
-def test_logs_backup_skips_unreadable_files_and_empty_returns_none(tmp_path, monkeypatch):
+def test_logs_backup_skips_unreadable_files_and_empty_returns_none(
+    tmp_path, monkeypatch
+):
     logs = tmp_path / "logs"
     logs.mkdir()
     (logs / "a.log").write_text("a")
@@ -191,7 +210,9 @@ def test_run_backup_only_writes_logs_when_database_changes(tmp_path):
 
 
 def _args(**changes):
-    values = dict(symbol="XAUUSD", db="db", log_dir="logs", backup_dir="backups", no_backup=False)
+    values = dict(
+        symbol="XAUUSD", db="db", log_dir="logs", backup_dir="backups", no_backup=False
+    )
     values.update(changes)
     return SimpleNamespace(**values)
 
@@ -201,8 +222,17 @@ def test_backup_wrapper_alerts_and_preserves_exit_code(monkeypatch, caplog):
     backup_calls = []
     caplog.set_level(logging.INFO, logger="autotrader")
     monkeypatch.delenv("AUTOTRADER_BACKUP_DIR", raising=False)
-    monkeypatch.setattr(run_daily, "_alert", lambda symbol, level, text: alerts.append((level, text)))
-    monkeypatch.setattr(run_daily, "run_backup", lambda *args: backup_calls.append(args) or SimpleNamespace(ok=True, changed=True, summary="backup ok"))
+    monkeypatch.setattr(
+        run_daily, "_alert", lambda symbol, level, text: alerts.append((level, text))
+    )
+    monkeypatch.setattr(
+        run_daily,
+        "run_backup",
+        lambda *args: (
+            backup_calls.append(args)
+            or SimpleNamespace(ok=True, changed=True, summary="backup ok")
+        ),
+    )
     monkeypatch.setattr(
         run_daily,
         "_run_trading",
@@ -214,9 +244,13 @@ def test_backup_wrapper_alerts_and_preserves_exit_code(monkeypatch, caplog):
     assert run_daily._backup_and_alert(_args()) is None
     assert alerts == []
 
-    monkeypatch.setattr(run_daily, "run_backup", lambda *args: SimpleNamespace(
-        ok=True, changed=False, summary="backup skipped: db unchanged"
-    ))
+    monkeypatch.setattr(
+        run_daily,
+        "run_backup",
+        lambda *args: SimpleNamespace(
+            ok=True, changed=False, summary="backup skipped: db unchanged"
+        ),
+    )
     run_daily._backup_and_alert(_args())
     assert alerts == []
     assert caplog.messages[-1] == "backup skipped: db unchanged"
