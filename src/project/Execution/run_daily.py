@@ -125,21 +125,24 @@ def _run_trading(
 
 def _backup_and_alert(args: argparse.Namespace) -> None:
     """Run the daily backup without affecting trading's exit status."""
+    log = logging.getLogger("autotrader")
     if args.no_backup:
         return
     backup_dir = args.backup_dir or os.environ.get("AUTOTRADER_BACKUP_DIR")
     if not backup_dir:
-        logging.getLogger(__name__).warning("AUTOTRADER_BACKUP_DIR not set")
+        log.warning("AUTOTRADER_BACKUP_DIR not set")
         _alert(args.symbol, "warn", "backup: AUTOTRADER_BACKUP_DIR not set")
         return
     try:
         result = run_backup(args.db, args.log_dir, backup_dir)
         if result.ok:
-            logging.getLogger(__name__).info(result.summary)
+            log.info(result.summary)
         else:
-            _alert(args.symbol, "warn", "backup FAILED: " + result.summary)
+            reason = result.summary.removeprefix("backup FAILED: ")
+            log.warning("backup failed: %s", reason)
+            _alert(args.symbol, "warn", "backup FAILED: " + reason)
     except Exception as exc:
-        logging.getLogger(__name__).exception("Backup wrapper failed")
+        log.exception("Backup wrapper failed")
         _alert(args.symbol, "warn", f"backup FAILED: {type(exc).__name__}")
 
 
@@ -163,23 +166,25 @@ def main(
     try:
         if args.retry_until_minutes <= 0:
             result = _run_trading(args)
-            # Keep compatibility with callers that monkeypatch the old int-returning function.
-            exit_code = result.code if isinstance(result, TradingResult) else result
+            exit_code = result.code
         else:
             now = clock or (lambda: datetime.now(timezone.utc))
             wait = sleep or time.sleep
             start = now()
             deadline = start + timedelta(minutes=args.retry_until_minutes)
+            attempts = 0
             while True:
+                attempts += 1
                 result = _run_trading(args, quiet_retryable=True)
-                if not isinstance(result, TradingResult):
-                    exit_code = result
-                    break
                 if result.retry_reason is None:
                     exit_code = result.code
                     break
                 if now() + timedelta(seconds=args.retry_every_seconds) > deadline:
                     if result.retry_reason == "market_closed":
+                        logging.getLogger("autotrader").warning(
+                            "give up after %d attempts: market closed / no tick",
+                            attempts,
+                        )
                         _alert(
                             args.symbol,
                             "warn",

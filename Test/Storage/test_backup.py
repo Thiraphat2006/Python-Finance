@@ -1,4 +1,5 @@
 import sqlite3
+import logging
 import zipfile
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -195,13 +196,18 @@ def _args(**changes):
     return SimpleNamespace(**values)
 
 
-def test_backup_wrapper_alerts_and_preserves_exit_code(monkeypatch):
+def test_backup_wrapper_alerts_and_preserves_exit_code(monkeypatch, caplog):
     alerts = []
     backup_calls = []
+    caplog.set_level(logging.INFO, logger="autotrader")
     monkeypatch.delenv("AUTOTRADER_BACKUP_DIR", raising=False)
     monkeypatch.setattr(run_daily, "_alert", lambda symbol, level, text: alerts.append((level, text)))
     monkeypatch.setattr(run_daily, "run_backup", lambda *args: backup_calls.append(args) or SimpleNamespace(ok=True, changed=True, summary="backup ok"))
-    monkeypatch.setattr(run_daily, "_run_trading", lambda args: 1)
+    monkeypatch.setattr(
+        run_daily,
+        "_run_trading",
+        lambda args: run_daily.TradingResult(1, None),
+    )
     assert run_daily.main(["--no-backup"]) == 1
     assert alerts == []
     assert backup_calls == []
@@ -213,6 +219,7 @@ def test_backup_wrapper_alerts_and_preserves_exit_code(monkeypatch):
     ))
     run_daily._backup_and_alert(_args())
     assert alerts == []
+    assert caplog.messages[-1] == "backup skipped: db unchanged"
 
     def fail(*args):
         raise RuntimeError("boom")
@@ -221,6 +228,34 @@ def test_backup_wrapper_alerts_and_preserves_exit_code(monkeypatch):
     assert run_daily.main(["--backup-dir", "backups"]) == 1
     run_daily._backup_and_alert(_args())
     assert alerts[-1][0] == "warn"
+    assert caplog.records[-1].levelno == logging.ERROR
+
+    monkeypatch.setattr(
+        run_daily,
+        "run_backup",
+        lambda *args: SimpleNamespace(
+            ok=True,
+            changed=True,
+            summary="backup ok: trader-2026-10-28.db, logs-2026-10-28.zip",
+        ),
+    )
+    run_daily._backup_and_alert(_args())
+    assert caplog.messages[-1] == (
+        "backup ok: trader-2026-10-28.db, logs-2026-10-28.zip"
+    )
+
+    monkeypatch.setattr(
+        run_daily,
+        "run_backup",
+        lambda *args: SimpleNamespace(
+            ok=False, changed=True, summary="backup FAILED: database unavailable"
+        ),
+    )
+    run_daily._backup_and_alert(_args())
+    assert alerts[-1] == ("warn", "backup FAILED: database unavailable")
+    assert caplog.messages[-1] == "backup failed: database unavailable"
+    assert caplog.records[-1].levelno == logging.WARNING
+
     monkeypatch.setenv("AUTOTRADER_BACKUP_DIR", "")
     backup_calls.clear()
     run_daily._backup_and_alert(_args(backup_dir=None))

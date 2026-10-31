@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta, timezone
+import logging
+import sys
 
 from project.Execution import run_daily
 
@@ -63,7 +65,8 @@ def test_retries_until_success_without_intermediate_alerts(monkeypatch):
     assert len(backups) == 1
 
 
-def test_gives_up_with_one_market_closed_alert(monkeypatch):
+def test_gives_up_with_one_market_closed_alert(monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger="autotrader")
     code, calls, alerts, backups, clock = _run_main(
         monkeypatch,
         [run_daily.TradingResult(0, "market_closed")] * 10,
@@ -77,6 +80,7 @@ def test_gives_up_with_one_market_closed_alert(monkeypatch):
     assert alerts == [
         ("warn", "ตลาดปิด/ไม่มี tick ตลอด 10 นาที ไม่ได้ประมวลผลวันนี้")
     ]
+    assert caplog.messages == ["give up after 3 attempts: market closed / no tick"]
     assert len(backups) == 1
 
 
@@ -112,6 +116,59 @@ def test_init_failure_retries_then_succeeds(monkeypatch):
     assert code == 0
     assert len(calls) == 2
     assert alerts == []
+    assert len(backups) == 1
+
+
+def test_init_failure_until_deadline_sends_one_error_and_backs_up_once(
+    monkeypatch, tmp_path
+):
+    class FailedMT5:
+        def __init__(self):
+            self.initialize_calls = 0
+
+        def initialize(self):
+            self.initialize_calls += 1
+            return False
+
+        def last_error(self):
+            return "terminal unavailable"
+
+    mt5 = FailedMT5()
+    monkeypatch.setitem(sys.modules, "MetaTrader5", mt5)
+    monkeypatch.setattr(run_daily, "load_env", lambda: None)
+    alerts = []
+    backups = []
+    monkeypatch.setattr(
+        run_daily,
+        "_alert",
+        lambda symbol, level, text: alerts.append((symbol, level, text)),
+    )
+    monkeypatch.setattr(
+        run_daily, "_backup_and_alert", lambda args: backups.append(args)
+    )
+    clock = FakeClock()
+
+    code = run_daily.main(
+        [
+            "--db",
+            str(tmp_path / "trader.db"),
+            "--log-dir",
+            str(tmp_path / "logs"),
+            "--no-backup",
+            "--retry-until-minutes",
+            "10",
+            "--retry-every-seconds",
+            "300",
+        ],
+        clock=clock.now,
+        sleep=clock.sleep,
+    )
+
+    assert code == 1
+    assert mt5.initialize_calls == 3
+    assert alerts == [
+        ("XAUUSD", "error", "initialize ล้มเหลวตลอด 10 นาที")
+    ]
     assert len(backups) == 1
 
 
