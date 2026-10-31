@@ -21,3 +21,7 @@ data/*.db
 data/*.db-wal
 data/*.db-shm
 logs/
+
+.coverage
+htmlcov/
+diff.txt
