@@ -187,8 +187,8 @@ def test_fetch_d1_bars_drops_forming_bar_and_adds_atr():
 def _tick_mt5(tick_time, trade_mode=4):
     return SimpleNamespace(
         SYMBOL_TRADE_MODE_FULL=4,
-        symbol_info_tick=lambda s: SimpleNamespace(time=tick_time),
-        symbol_info=lambda s: SimpleNamespace(trade_mode=trade_mode),
+        symbol_info_tick=lambda s: SimpleNamespace(time=tick_time, bid=2000.0, ask=2000.4),
+        symbol_info=lambda s: SimpleNamespace(trade_mode=trade_mode, point=0.01),
     )
 
 
@@ -209,12 +209,14 @@ def test_market_open_when_tick_changes_after_35_seconds():
     def tick(_symbol):
         nonlocal calls
         calls += 1
-        return SimpleNamespace(time=1 if clock.elapsed < 35 else 2)
+        return SimpleNamespace(
+            time=1 if clock.elapsed < 35 else 2, bid=2000.0, ask=2000.4
+        )
 
     mt5 = SimpleNamespace(
         SYMBOL_TRADE_MODE_FULL=4,
         symbol_info_tick=tick,
-        symbol_info=lambda s: SimpleNamespace(trade_mode=4),
+        symbol_info=lambda s: SimpleNamespace(trade_mode=4, point=0.01),
     )
     assert is_market_open(mt5, "XAUUSD", sleep=clock.sleep) is True
     assert clock.elapsed == pytest.approx(35.0)
@@ -244,6 +246,44 @@ def test_market_closed_when_there_is_no_tick():
     )
     assert is_market_open(mt5, "XAUUSD", sleep=clock.sleep) is False
     assert clock.sleeps == []
+
+
+def test_market_open_when_tick_changes_with_normal_spread():
+    clock = FakeClock()
+    calls = 0
+
+    def tick(_symbol):
+        nonlocal calls
+        calls += 1
+        return SimpleNamespace(
+            time=1 if calls == 1 else 2, bid=2000.0, ask=2000.4
+        )
+
+    mt5 = SimpleNamespace(
+        SYMBOL_TRADE_MODE_FULL=4,
+        symbol_info_tick=tick,
+        symbol_info=lambda s: SimpleNamespace(trade_mode=4, point=0.01),
+    )
+    assert is_market_open(mt5, "XAUUSD", wait_s=1.0, poll_s=0.5, sleep=clock.sleep)
+
+
+def test_market_closed_when_changed_tick_has_abnormal_spread():
+    clock = FakeClock()
+    calls = 0
+
+    def tick(_symbol):
+        nonlocal calls
+        calls += 1
+        return SimpleNamespace(
+            time=1 if calls == 1 else 2, bid=2000.0, ask=2058.12
+        )
+
+    mt5 = SimpleNamespace(
+        SYMBOL_TRADE_MODE_FULL=4,
+        symbol_info_tick=tick,
+        symbol_info=lambda s: SimpleNamespace(trade_mode=4, point=0.01),
+    )
+    assert not is_market_open(mt5, "XAUUSD", wait_s=1.0, poll_s=0.5, sleep=clock.sleep)
 
 
 def test_add_atr_known_value():

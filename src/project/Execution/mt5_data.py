@@ -13,6 +13,8 @@ import pandas as pd
 
 log = logging.getLogger("autotrader")
 
+MAX_SPREAD_POINTS = 500
+
 
 def get_server_now(mt5, symbol: str) -> pd.Timestamp:
     """เวลา server ประมาณจาก tick ล่าสุด (ตลาดปิด = เวลาของ tick สุดท้ายก่อนปิด)"""
@@ -44,15 +46,23 @@ def is_market_open(
     def stamp(t):
         return getattr(t, "time_msc", None) or t.time
 
+    def acceptable(tick):
+        return (
+            tick is not None
+            and (float(tick.ask) - float(tick.bid)) / float(info.point)
+            <= MAX_SPREAD_POINTS
+        )
+
     first = mt5.symbol_info_tick(symbol)
     if first is None:
         return False
-    base, waited = stamp(first), 0.0
+    base = stamp(first)
+    waited = 0.0
     while waited < wait_s:
         sleep(poll_s)
         waited += poll_s
         t = mt5.symbol_info_tick(symbol)
-        if t is not None and stamp(t) != base:
+        if acceptable(t) and (base is None or stamp(t) != base):
             return True
     return False
 
