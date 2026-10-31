@@ -14,6 +14,16 @@ from project.Execution.mt5_data import (
 from project.Risk.position_sizing import SymbolSpec
 
 
+class MT5InitError(RuntimeError):
+    def __init__(self, last_error: object):
+        self.last_error = str(last_error)
+        super().__init__(f"initialize ไม่สำเร็จ: {self.last_error}")
+
+
+class SymbolNotFoundError(RuntimeError):
+    pass
+
+
 class MT5Data:
     def __init__(self, mt5: Any, symbol: str, magic: int | None):
         self.mt5 = mt5
@@ -54,7 +64,7 @@ class MT5Session:
     def __init__(
         self,
         symbol: str,
-        spec: SymbolSpec,
+        spec: SymbolSpec | None = None,
         magic: int = 26102024,
         mt5_module: Any = None,
     ):
@@ -69,14 +79,25 @@ class MT5Session:
 
     def connect(self) -> None:
         if not self.mt5.initialize():
-            raise RuntimeError(f"initialize ไม่สำเร็จ: {self.mt5.last_error()}")
+            raise MT5InitError(self.mt5.last_error())
         info = self.mt5.symbol_info(self.symbol)
         if info is None:
-            raise RuntimeError(f"ไม่พบ symbol {self.symbol}")
+            raise SymbolNotFoundError(f"ไม่พบ symbol {self.symbol}")
         if not info.visible:
             self.mt5.symbol_select(self.symbol, True)
+        spec = self.spec
+        if spec is None:
+            spec = SymbolSpec(
+                self.symbol,
+                point=info.point,
+                contract_size=info.trade_contract_size,
+                volume_min=info.volume_min,
+                volume_step=info.volume_step,
+                volume_max=info.volume_max,
+            )
+            self.spec = spec
         self.broker = MT5Broker(
-            self.spec,
+            spec,
             self.symbol,
             mt5_module=self.mt5,
             magic=self.magic,

@@ -3,7 +3,13 @@ from types import SimpleNamespace as NS
 import pandas as pd
 import pytest
 
-from project.Execution.mt5_session import MT5Data, MT5Session
+from project.Execution.interfaces import Broker, Session
+from project.Execution.mt5_session import (
+    MT5Data,
+    MT5InitError,
+    MT5Session,
+    SymbolNotFoundError,
+)
 from project.Risk.position_sizing import SymbolSpec
 
 
@@ -56,6 +62,10 @@ def test_connect_creates_broker_and_data():
     assert session.connect() is None
     assert session.broker.symbol == "XAUUSD"
     assert isinstance(session.data, MT5Data)
+    b: Broker = session.broker
+    s: Session = session
+    assert b is session.broker
+    assert s is session
     assert mt5.initialize_calls == 1
 
 
@@ -63,7 +73,7 @@ def test_connect_initialize_failure():
     mt5 = FakeMT5(initialize_result=False)
     session = MT5Session("XAUUSD", SymbolSpec("XAUUSD"), mt5_module=mt5)
 
-    with pytest.raises(RuntimeError, match="initialize ไม่สำเร็จ"):
+    with pytest.raises(MT5InitError, match="initialize ไม่สำเร็จ"):
         session.connect()
 
 
@@ -72,11 +82,11 @@ def test_connect_missing_symbol():
     mt5.info = None
     session = MT5Session("XAUUSD", SymbolSpec("XAUUSD"), mt5_module=mt5)
 
-    with pytest.raises(RuntimeError, match="ไม่พบ symbol XAUUSD"):
+    with pytest.raises(SymbolNotFoundError, match="ไม่พบ symbol XAUUSD"):
         session.connect()
 
 
-def test_connect_selects_invisible_symbol():
+def test_connect_second_invisible_symbol_select_comes_from_mt5_broker():
     mt5 = FakeMT5(
         symbol_info=NS(
             visible=False,
@@ -92,6 +102,31 @@ def test_connect_selects_invisible_symbol():
     session.connect()
 
     assert mt5.select_calls == [("XAUUSD", True), ("XAUUSD", True)]
+
+
+def test_connect_builds_spec_from_symbol_info():
+    mt5 = FakeMT5(
+        symbol_info=NS(
+            visible=True,
+            point=0.1,
+            trade_contract_size=10.0,
+            volume_min=0.1,
+            volume_step=0.1,
+            volume_max=25.0,
+        )
+    )
+    session = MT5Session("XAUUSD", mt5_module=mt5)
+
+    session.connect()
+
+    assert session.spec == SymbolSpec(
+        "XAUUSD",
+        point=0.1,
+        contract_size=10.0,
+        volume_min=0.1,
+        volume_step=0.1,
+        volume_max=25.0,
+    )
 
 
 def test_close_shuts_down():
