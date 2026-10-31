@@ -10,7 +10,7 @@ ScheduledTestStrategy ใช้ทดสอบ "ระบบ" ไม่ใช่
 """
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 import pandas as pd
 
@@ -21,10 +21,10 @@ from project.Risk.position_sizing import SymbolSpec
 class Signal:
     action: str = "hold"  # enter_long | enter_short | exit | hold
     reason: str = "ok"
-    lots: Optional[float] = (
+    lots: float | None = (
         None  # None = ให้ fixed fractional คำนวณ; มีค่า = เพดานจากกลยุทธ์ (min กับ fixed fractional)
     )
-    target_weight: Optional[float] = None  # ไว้บันทึกลง runs (TSMOM)
+    target_weight: float | None = None  # ไว้บันทึกลง runs (TSMOM)
     ignore_risk_sizing: bool = (
         False  # True = ใช้ lots ตรง ๆ (โหมดทดสอบ) แต่ยังผ่าน risk engine ทุกกฎ
     )

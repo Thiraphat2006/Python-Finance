@@ -12,10 +12,11 @@ run_once() รับข้อมูลที่ดึงมาแล้ว (bars
 - เวลา `now` ใช้ UTC ตลอด (ฐานของ daily loss limit ต้องสม่ำเสมอระหว่างรอบ)
 """
 
-import logging
 import inspect
+import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Optional, Sequence
+from typing import Any
 
 import pandas as pd
 
@@ -35,8 +36,8 @@ class RunResult:
     status: str  # done | skipped | error
     decision: str  # enter | exit | hold | blocked | error | skip
     reason: str = "ok"
-    run_id: Optional[int] = None
-    sync_note: Optional[str] = None
+    run_id: int | None = None
+    sync_note: str | None = None
 
 
 def _order(symbol: str, kind: str, side: str, lots: float, ok: bool, **kw: Any) -> dict:
@@ -204,9 +205,9 @@ def run_once(
     quote: tuple[float, float],
     now: pd.Timestamp,
     mt5=None,
-    magic: Optional[int] = None,
+    magic: int | None = None,
     other_positions: Sequence = (),
-    logger: Optional[logging.Logger] = None,
+    logger: logging.Logger | None = None,
 ) -> RunResult:
     """bars = แท่ง D1 ที่ปิดแล้ว (คอลัมน์ open/high/low/close/atr), quote = (bid, ask), now = UTC แบบ naive
     other_positions = [(position, spec)] ของ symbol อื่น (ไว้นับ open risk รวมเมื่อขยายเป็นหลาย symbol)"""

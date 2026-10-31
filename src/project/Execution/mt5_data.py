@@ -7,7 +7,6 @@
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Optional
 
 import pandas as pd
 
@@ -88,7 +87,7 @@ def fetch_d1_bars(
     symbol: str,
     count: int = 120,
     atr_period: int = 14,
-    server_now: Optional[pd.Timestamp] = None,
+    server_now: pd.Timestamp | None = None,
 ) -> pd.DataFrame:
     """แท่ง D1 ที่ปิดแล้วเท่านั้น (ตัดแท่งที่วันที่ตรงกับวันปัจจุบันของ server ซึ่งกำลังก่อตัวอยู่)
 
@@ -99,15 +98,16 @@ def fetch_d1_bars(
     if rates is None or len(rates) == 0:
         raise RuntimeError(f"ดึงแท่ง D1 ไม่ได้: {mt5.last_error()}")
     df = pd.DataFrame(rates)
-    df.index = pd.to_datetime(df["time"], unit="s")
+    times = pd.DatetimeIndex(pd.to_datetime(df["time"], unit="s"))
+    df.index = times
     df.index.name = "time"
     df = df.drop(columns=["time"])
     now = server_now if server_now is not None else get_server_now(mt5, symbol)
-    df = df[df.index.normalize() < now.normalize()]
+    df = df[times.normalize() < now.normalize()]
     return add_atr(df, atr_period)
 
 
-def log_recent_deals(db, mt5, symbol: str, magic: Optional[int], days: int = 7) -> int:
+def log_recent_deals(db, mt5, symbol: str, magic: int | None, days: int = 7) -> int:
     """บันทึก deal ของเราจากประวัติ broker ลง DB (ซ้ำไม่เป็นไร) คืนจำนวนที่เพิ่มใหม่
 
     จับกรณี stop ถูกชนตอนโปรแกรมไม่ได้รันด้วย: deal ปิดจะถูกบันทึกในรอบถัดไป

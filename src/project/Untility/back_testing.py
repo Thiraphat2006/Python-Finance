@@ -1,11 +1,8 @@
-from typing import Optional
-
-import numpy as np
 import pandas as pd
 import vectorbt as vbt
 
-from project.Indicator.Moving_Avg import MovingAvg
-from project.strategy.Moving_Avg_Logic import MovingAvgLogic, StrategyConfig
+from project.Indicator.moving_avg import MovingAvg
+from project.strategy.moving_avg_logic import MovingAvgLogic, StrategyConfig
 
 
 def back_test(
@@ -23,7 +20,7 @@ def back_test(
     - freq อ่านจากข้อมูลจริง; ดูผลด้วย stats(pf) / sharpe(pf) เพื่อให้ annualize ถูก
     """
     if not isinstance(df.index, pd.DatetimeIndex):
-        raise ValueError("df.index ต้องเป็นเวลา (DatetimeIndex) ดู DataLoader")
+        raise TypeError("df.index ต้องเป็นเวลา (DatetimeIndex) ดู DataLoader")
 
     sig = df[["long_entry", "short_entry", "exit_long", "exit_short"]].shift(1)
     sig = sig.fillna(False).astype(bool)
@@ -64,14 +61,14 @@ def year_freq_of(index: pd.DatetimeIndex) -> pd.Timedelta:
 
 def stats(pf) -> pd.Series:
     """pf.stats() ที่ annualize ถูกต้อง (ใช้แทน pf.stats() ตรง ๆ)"""
-    return pf.stats(settings=dict(year_freq=year_freq_of(pf.wrapper.index)))
+    return pf.stats(settings={"year_freq": year_freq_of(pf.wrapper.index)})
 
 
 def sharpe(pf) -> float:
     return float(pf.sharpe_ratio(year_freq=year_freq_of(pf.wrapper.index)))
 
 
-def run(raw: pd.DataFrame, config: Optional[StrategyConfig] = None, **kwargs):
+def run(raw: pd.DataFrame, config: StrategyConfig | None = None, **kwargs):
     """raw (จาก DataLoader) -> indicator -> สัญญาณ -> backtest"""
     ind = MovingAvg(raw).compute_indicators()
     sig = MovingAvgLogic(ind, config)()

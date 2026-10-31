@@ -1,7 +1,6 @@
 import datetime
 import logging
 from pathlib import Path
-from typing import Optional
 
 import MetaTrader5 as mt5
 import pandas as pd
@@ -12,8 +11,8 @@ logger = logging.getLogger(__name__)
 def _to_utc(dt: datetime.datetime) -> datetime.datetime:
     """MT5 ต้องการเวลา UTC แบบมี tzinfo ถ้าไม่ใส่จะเพี้ยนตาม timezone เครื่อง"""
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=datetime.timezone.utc)
-    return dt.astimezone(datetime.timezone.utc)
+        return dt.replace(tzinfo=datetime.UTC)
+    return dt.astimezone(datetime.UTC)
 
 
 class DataLoader:
@@ -21,8 +20,8 @@ class DataLoader:
         self,
         symbol: str,
         time_frame=mt5.TIMEFRAME_H4,
-        cache_dir: Optional[str] = "data_cache",
-        terminal_path: Optional[str] = None,
+        cache_dir: str | None = "data_cache",
+        terminal_path: str | None = None,
     ):
         # terminal_path เช่น r"C:\Program Files\MetaTrader 5\terminal64.exe"
         # ใส่เมื่อเครื่องมี MT5 หลายตัว หรือ initialize หาโปรแกรมไม่เจอ

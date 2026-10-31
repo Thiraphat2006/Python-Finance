@@ -13,9 +13,10 @@ daily limit / kill switch เป็นระดับบัญชีเสมอ
 (ไม่เช่นนั้น peak equity และ kill switch จะหายทุกเช้า)
 """
 
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Collection, Iterable, Optional
+from typing import Any
 
 import pandas as pd
 
@@ -27,7 +28,7 @@ class RiskConfig:
     max_drawdown_kill: float = 0.10  # 10% จาก peak
     atr_stop_mult: float = 2.0
     max_open_positions: int = 1
-    max_spread_points: Optional[float] = None  # None = ไม่จำกัด
+    max_spread_points: float | None = None  # None = ไม่จำกัด
     max_total_risk: float = 0.02  # เพดานความเสี่ยงที่เปิดอยู่รวมกัน (สัดส่วนของ equity)
 
 
@@ -61,10 +62,10 @@ class RiskEngine:
     def __init__(self, cfg: RiskConfig, equity: float):
         self.cfg = cfg
         self.peak_equity = equity
-        self.day: Optional[date] = None
+        self.day: date | None = None
         self.day_start_equity = equity
         self.killed = False
-        self.kill_reason: Optional[str] = None
+        self.kill_reason: str | None = None
 
     # ---------- state ----------
     def update(self, ts: pd.Timestamp, equity: float) -> None:
@@ -131,10 +132,10 @@ class RiskEngine:
         open_positions: int,
         spread_points: float = 0.0,
         *,
-        symbol: Optional[str] = None,
+        symbol: str | None = None,
         open_symbols: Collection[str] = (),
         open_risk: float = 0.0,
-        new_risk: Optional[float] = None,
+        new_risk: float | None = None,
     ) -> Decision:
         """open_risk = ความเสี่ยงรวมที่เปิดอยู่ (สัดส่วนของ equity, ดู open_risk_fraction)
         new_risk = ความเสี่ยงของเทรดใหม่ (ไม่ใส่ = risk_per_trade)"""

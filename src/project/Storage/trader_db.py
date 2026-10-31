@@ -7,9 +7,10 @@
 """
 
 import sqlite3
-from datetime import datetime, timezone
+from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Self
 
 import pandas as pd
 
@@ -93,13 +94,13 @@ CREATE TABLE IF NOT EXISTS state (
 );
 """
 
-Timeish = Union[None, str, int, float, datetime, pd.Timestamp]
+Timeish = None | str | int | float | datetime | pd.Timestamp
 
 
 def iso(ts: Timeish = None) -> str:
     """แปลงเวลาเป็น ISO 8601; None = ตอนนี้ (UTC); ตัวเลข = epoch วินาที"""
     if ts is None:
-        return datetime.now(timezone.utc).isoformat(timespec="seconds")
+        return datetime.now(UTC).isoformat(timespec="seconds")
     if isinstance(ts, (int, float)):
         return pd.Timestamp(ts, unit="s").isoformat()
     return pd.Timestamp(ts).isoformat()
@@ -113,7 +114,7 @@ def _get(obj: Any, name: str, default: Any = None) -> Any:
 
 
 class TraderDB:
-    def __init__(self, path: Union[str, Path] = "data/trader.db"):
+    def __init__(self, path: str | Path = "data/trader.db"):
         self.path = str(path)
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
@@ -137,7 +138,7 @@ class TraderDB:
     def close(self) -> None:
         self.conn.close()
 
-    def __enter__(self) -> "TraderDB":
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *exc) -> None:
@@ -150,9 +151,9 @@ class TraderDB:
         symbol: str,
         bar_time: Timeish,
         decision: str,
-        signal: Optional[str] = None,
-        target_weight: Optional[float] = None,
-        lots_requested: Optional[float] = None,
+        signal: str | None = None,
+        target_weight: float | None = None,
+        lots_requested: float | None = None,
         reason: str = "ok",
         status: str = "done",
         started_at: Timeish = None,
@@ -175,9 +176,11 @@ class TraderDB:
                     status,
                 ),
             )
+        if cur.lastrowid is None:
+            raise sqlite3.DatabaseError("insert did not return a run id")
         return int(cur.lastrowid)
 
-    def last_processed_bar(self, strategy: str, symbol: str) -> Optional[str]:
+    def last_processed_bar(self, strategy: str, symbol: str) -> str | None:
         """แท่งล่าสุดที่ประมวลผลสำเร็จแล้ว (status='done') ใช้กันออเดอร์ซ้ำเมื่อรันรอบเดิม"""
         row = self.conn.execute(
             "SELECT MAX(bar_time) FROM runs"
@@ -202,13 +205,13 @@ class TraderDB:
         side: str,
         lots: float,
         ok: bool,
-        run_id: Optional[int] = None,
-        requested_price: Optional[float] = None,
-        fill_price: Optional[float] = None,
-        sl: Optional[float] = None,
-        retcode: Optional[int] = None,
-        ticket: Optional[int] = None,
-        comment: Optional[str] = None,
+        run_id: int | None = None,
+        requested_price: float | None = None,
+        fill_price: float | None = None,
+        sl: float | None = None,
+        retcode: int | None = None,
+        ticket: int | None = None,
+        comment: str | None = None,
     ) -> int:
         with self.conn:
             cur = self.conn.execute(
@@ -231,6 +234,8 @@ class TraderDB:
                     int(ok),
                 ),
             )
+        if cur.lastrowid is None:
+            raise sqlite3.DatabaseError("insert did not return an order id")
         return int(cur.lastrowid)
 
     # ---------- deals ----------
@@ -294,7 +299,7 @@ class TraderDB:
                 (key, str(value), iso()),
             )
 
-    def get_state(self, key: str, default: Optional[str] = None) -> Optional[str]:
+    def get_state(self, key: str, default: str | None = None) -> str | None:
         row = self.conn.execute(
             "SELECT value FROM state WHERE key=?", (key,)
         ).fetchone()

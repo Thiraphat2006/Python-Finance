@@ -25,8 +25,8 @@ Usage:
     print(evaluate_pass(data, points))
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping, Optional
 
 import numpy as np
 import pandas as pd
@@ -59,14 +59,16 @@ def _aligned(data: Mapping[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     """
     if not data:
         raise ValueError("ต้องมีข้อมูลอย่างน้อย 1 สินทรัพย์")
-    idx = None
+    idx: pd.DatetimeIndex | None = None
     for sym, df in data.items():
         for col in ("open", "close"):
             if col not in df.columns:
                 raise ValueError(f"{sym} ไม่มีคอลัมน์ {col}")
         if not isinstance(df.index, pd.DatetimeIndex):
-            raise ValueError(f"{sym}: index ต้องเป็น DatetimeIndex")
+            raise TypeError(f"{sym}: index ต้องเป็น DatetimeIndex")
         idx = df.index if idx is None else idx.union(df.index)
+    if idx is None:
+        raise ValueError("ต้องมีข้อมูลอย่างน้อย 1 สินทรัพย์")
     idx = idx.sort_values()
     # ffill เติมเฉพาะช่องว่างหลังข้อมูลตัวเองเริ่มแล้ว ช่วงก่อนเริ่มยังเป็น NaN
     return {sym: df.reindex(idx).ffill() for sym, df in data.items()}
@@ -75,7 +77,10 @@ def _aligned(data: Mapping[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
 def signals(close: pd.DataFrame, cfg: TsmomConfig) -> pd.DataFrame:
     """sign ของผลตอบแทน lookback วัน: +1 / -1 / 0 (NaN ช่วงอุ่นเครื่อง = 0)"""
     ret = close / close.shift(cfg.lookback) - 1
-    return np.sign(ret).fillna(0.0)
+    signed = np.sign(ret)
+    if not isinstance(signed, pd.DataFrame):
+        raise TypeError("expected DataFrame result")
+    return signed.fillna(0.0)
 
 
 def target_weights(close: pd.DataFrame, cfg: TsmomConfig) -> pd.DataFrame:
@@ -94,6 +99,8 @@ def target_weights(close: pd.DataFrame, cfg: TsmomConfig) -> pd.DataFrame:
 def monthly_rebalanced(weights: pd.DataFrame) -> pd.DataFrame:
     """ถือน้ำหนักของวันทำการสุดท้ายของแต่ละเดือน จนถึงสิ้นเดือนถัดไป (วัน t รู้ที่ปิดวัน t)"""
     idx = weights.index
+    if not isinstance(idx, pd.DatetimeIndex):
+        raise TypeError("weights index must be DatetimeIndex")
     month = idx.to_period("M")
     is_last = pd.Series(month, index=idx) != pd.Series(month, index=idx).shift(
         -1
@@ -106,7 +113,7 @@ def monthly_rebalanced(weights: pd.DataFrame) -> pd.DataFrame:
 def run_tsmom(
     data: Mapping[str, pd.DataFrame],
     points: Mapping[str, float],
-    cfg: Optional[TsmomConfig] = None,
+    cfg: TsmomConfig | None = None,
     fix_spread: bool = True,
 ) -> dict:
     """คืน dict: returns (รายวันสุทธิ), gross_returns, weights (ที่ถือจริงรายวัน), cost, equity"""
@@ -167,7 +174,7 @@ def run_tsmom(
     }
 
 
-def metrics(returns: pd.Series, periods_per_year: Optional[float] = None) -> dict:
+def metrics(returns: pd.Series, periods_per_year: float | None = None) -> dict:
     """periods_per_year=None -> นับจำนวนแท่งต่อปีจริงจากข้อมูล (ไม่ hardcode 252)"""
     r = returns.dropna()
     if len(r) < 2 or r.std() == 0:
@@ -181,20 +188,22 @@ def metrics(returns: pd.Series, periods_per_year: Optional[float] = None) -> dic
         years = max((r.index[-1] - r.index[0]).days / 365.25, 1e-9)
         periods_per_year = len(r) / years
     eq = (1 + r).cumprod()
+    if not isinstance(r.index, pd.DatetimeIndex):
+        raise TypeError("returns index must be DatetimeIndex")
     yearly = (1 + r).groupby(r.index.year).prod() - 1
     return {
         "sharpe": round(float(r.mean() / r.std() * np.sqrt(periods_per_year)), 2),
         "return_%": round(float(eq.iloc[-1] - 1) * 100, 1),
         "maxdd_%": round(abs(float((eq / eq.cummax() - 1).min())) * 100, 1),
         "positive_years_%": round(float((yearly > 0).mean()) * 100, 0),
-        "years": int(len(yearly)),
+        "years": len(yearly),
     }
 
 
 def evaluate_pass(
     data: Mapping[str, pd.DataFrame],
     points: Mapping[str, float],
-    cfg: Optional[TsmomConfig] = None,
+    cfg: TsmomConfig | None = None,
 ) -> dict:
     """รันตามเกณฑ์ที่ล็อกไว้: ผลหลัก + stress (spread x2) + ความเสถียรของ lookback (ดูเฉย ๆ)"""
     cfg = cfg or TsmomConfig()

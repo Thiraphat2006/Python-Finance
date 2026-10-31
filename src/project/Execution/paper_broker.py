@@ -4,7 +4,6 @@
 """
 
 from dataclasses import dataclass
-from typing import Optional
 
 import pandas as pd
 
@@ -36,7 +35,7 @@ class PaperBroker:
     def __init__(self, spec: SymbolSpec, cash: float = 10_000.0):
         self.spec = spec
         self.cash = cash
-        self.position: Optional[Position] = None
+        self.position: Position | None = None
         self.trades: list[Trade] = []
 
     # ---------- state ----------
@@ -89,7 +88,7 @@ class PaperBroker:
 
     def check_stop(
         self, o: float, h: float, l: float, half_spread: float, ts: pd.Timestamp
-    ) -> Optional[Trade]:
+    ) -> Trade | None:
         """ถ้าแท่งนี้แตะ stop -> ปิดที่ stop (ถ้าเปิดแท่งกระโดดข้าม stop ปิดที่ open ซึ่งแย่กว่า)"""
         p = self.position
         if p is None:

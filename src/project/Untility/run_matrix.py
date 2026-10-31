@@ -12,8 +12,8 @@ import contextlib
 import datetime
 import io
 import time
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional, Sequence
 
 import MetaTrader5 as mt5
 import pandas as pd
@@ -39,7 +39,7 @@ def _run_pair(
     tf_name: str,
     date_from: datetime.datetime,
     date_to: datetime.datetime,
-    terminal_path: Optional[str],
+    terminal_path: str | None,
     train_years: int,
     test_years: int,
     fix_spread: bool = True,
@@ -116,7 +116,7 @@ def run_matrix(
     date_to: datetime.datetime = datetime.datetime(2024, 1, 1),
     train_years: int = 2,
     test_years: int = 1,
-    terminal_path: Optional[str] = None,
+    terminal_path: str | None = None,
     out_dir: str = "results",
     fix_spread: bool = True,
     extra_spread_points: float = 0.0,

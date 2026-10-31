@@ -9,7 +9,6 @@ Interface ของกลยุทธ์ที่ต้องมี: open, high,
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -28,7 +27,7 @@ class ReplayResult:
     trades: pd.DataFrame
     rejections: dict = field(default_factory=dict)
     killed: bool = False
-    kill_reason: Optional[str] = None
+    kill_reason: str | None = None
 
     def summary(self) -> dict:
         eq = self.equity
@@ -37,7 +36,7 @@ class ReplayResult:
         return {
             "return_%": round(float((eq.iloc[-1] / eq.iloc[0] - 1) * 100), 2),
             "max_dd_%": round(float(((peak - eq) / peak).max() * 100), 2),
-            "trades": int(len(self.trades)),
+            "trades": len(self.trades),
             "win_rate_%": round(float((pnl > 0).mean() * 100), 1) if len(pnl) else 0.0,
             "rejections": dict(self.rejections),
             "killed": self.killed,
@@ -57,7 +56,7 @@ def _b(sig: pd.DataFrame, col: str) -> np.ndarray:
 def run_paper(
     sig: pd.DataFrame,
     spec: SymbolSpec,
-    risk_cfg: Optional[RiskConfig] = None,
+    risk_cfg: RiskConfig | None = None,
     init_cash: float = 10_000.0,
     extra_spread_points: float = 0.0,
 ) -> ReplayResult:
@@ -65,7 +64,7 @@ def run_paper(
     if missing:
         raise ValueError(f"missing columns: {', '.join(missing)}")
     if not isinstance(sig.index, pd.DatetimeIndex):
-        raise ValueError("index ต้องเป็น DatetimeIndex")
+        raise TypeError("index ต้องเป็น DatetimeIndex")
 
     cfg = risk_cfg or RiskConfig()
     broker = PaperBroker(spec, init_cash)

@@ -200,6 +200,33 @@ def test_retry_on_requote_then_success():
     assert len(fake.sent) == 3 and b.position is not None
 
 
+def test_retry_exhausted_raises():
+    fake, b = make(retcodes=[10004, 10004, 10004])
+    with pytest.raises(BrokerError, match="retry ครบ"):
+        b.open("long", 0.1, 0, 0, stop=1990.0, ts=TS)
+    assert len(fake.sent) == 3
+
+
+def test_order_send_none_raises():
+    fake, b = make()
+    fake.order_send = lambda req: None
+    with pytest.raises(BrokerError, match="order_send คืน None"):
+        b.open("long", 0.1, 0, 0, stop=1990.0, ts=TS)
+
+
+def test_rejected_retcode_raises():
+    fake, b = make(retcodes=[10013])
+    with pytest.raises(BrokerError, match="order ถูกปฏิเสธ"):
+        b.open("long", 0.1, 0, 0, stop=1990.0, ts=TS)
+    assert len(fake.sent) == 1
+
+
+def test_close_without_position_raises():
+    _, b = make()
+    with pytest.raises(RuntimeError, match="ไม่มีสถานะให้ปิด"):
+        b.close(0, 0, TS, "exit")
+
+
 def test_ambiguous_failure_not_retried():
     fake, b = make(retcodes=[10012])  # timeout
     with pytest.raises(BrokerError):
@@ -249,7 +276,7 @@ def test_sync_reports_ticket_change():
 
 
 def test_sync_matching_position_returns_none():
-    fake, b = make()
+    _, b = make()
     b.open("long", 0.1, 0, 0, stop=1990.0, ts=TS)
     assert b.sync() is None
 

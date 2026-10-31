@@ -83,6 +83,16 @@ def test_send_urlopen_error_returns_false_without_raising(monkeypatch):
         assert send("hello") is False
 
 
+def test_send_value_error_returns_false_without_raising(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "chat")
+    with patch(
+        "project.Storage.notify.request.urlopen",
+        side_effect=ValueError("invalid response"),
+    ):
+        assert send("hello") is False
+
+
 def test_send_truncates_long_text(monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "token")
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "chat")
@@ -101,9 +111,11 @@ def test_send_error_log_does_not_contain_token(monkeypatch, caplog):
     token = "secret-token"
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", token)
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "chat")
-    with caplog.at_level(logging.WARNING):
-        with patch(
+    with (
+        caplog.at_level(logging.WARNING),
+        patch(
             "project.Storage.notify.request.urlopen", side_effect=RuntimeError(token)
-        ):
-            assert send("hello") is False
+        ),
+    ):
+        assert send("hello") is False
     assert token not in caplog.text

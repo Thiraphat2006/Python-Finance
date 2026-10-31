@@ -7,12 +7,13 @@ Usage (ใน notebook):
 """
 
 import itertools
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from project.Indicator.Moving_Avg import MovingAvg
-from project.strategy.Moving_Avg_Logic import MovingAvgLogic, StrategyConfig
+from project.Indicator.moving_avg import MovingAvg
+from project.strategy.moving_avg_logic import MovingAvgLogic, StrategyConfig
 from project.Untility.back_testing import back_test, sharpe
 
 MIN_TRAIN_TRADES = 30  # น้อยกว่านี้ Sharpe ไม่มีความหมาย
@@ -43,7 +44,7 @@ def evaluate(
     ).compute_indicators()  # indicator ใช้เฉพาะอดีต จึงคำนวณรวมแล้วค่อยตัดได้
     cut = pd.Timestamp(split)
 
-    rows = []
+    rows: list[dict[str, Any]] = []
     for adx_min, mode, allow_short in itertools.product(adx_grid, exit_modes, shorts):
         cfg = StrategyConfig(adx_min=adx_min, exit_mode=mode, allow_short=allow_short)
         sig = MovingAvgLogic(ind, cfg)()
@@ -154,7 +155,7 @@ def walk_forward(
             break
         t2 = min(t2, end + pd.Timedelta(seconds=1))
 
-        rows = []
+        rows: list[dict[str, Any]] = []
         for c, sig in sigs.items():
             tr = _score(sig[(sig.index >= t0) & (sig.index < t1)], **bt_kwargs)
             te_sig = sig[(sig.index >= t1) & (sig.index < t2)]

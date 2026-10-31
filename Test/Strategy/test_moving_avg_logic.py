@@ -3,8 +3,8 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from project.Indicator.Moving_Avg import MovingAvg
-from project.strategy.Moving_Avg_Logic import MovingAvgLogic, StrategyConfig
+from project.Indicator.moving_avg import MovingAvg
+from project.strategy.moving_avg_logic import MovingAvgLogic, StrategyConfig
 
 
 def make_raw(n: int = 3000, seed: int = 0) -> pd.DataFrame:

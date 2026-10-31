@@ -78,8 +78,8 @@ def test_no_lookahead_changing_future_does_not_change_past():
     r1 = run_tsmom(d, pts, CFG)["returns"]
     d2 = {k: v.copy() for k, v in d.items()}
     cut = d2["a"].index[600]
-    for k in d2:
-        d2[k].loc[d2[k].index > cut, ["open", "close"]] *= 3.0  # ทำลายอนาคต
+    for frame in d2.values():
+        frame.loc[frame.index > cut, ["open", "close"]] *= 3.0  # ทำลายอนาคต
     r2 = run_tsmom(d2, pts, CFG)["returns"]
     common = r1.index[r1.index < cut - pd.Timedelta(days=5)]
     pd.testing.assert_series_equal(r1.loc[common], r2.loc[common])

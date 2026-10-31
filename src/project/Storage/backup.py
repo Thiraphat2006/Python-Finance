@@ -9,7 +9,7 @@ import sqlite3
 import zipfile
 from contextlib import closing
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 
@@ -24,7 +24,7 @@ class BackupResult:
 
 
 def _date(now: datetime) -> str:
-    return now.astimezone(timezone.utc).date().isoformat()
+    return now.astimezone(UTC).date().isoformat()
 
 
 def _size(path: Path) -> str:
@@ -84,10 +84,13 @@ def backup_database(
                     old_integrity = old_conn.execute(
                         "PRAGMA integrity_check"
                     ).fetchone()
-                    if old_integrity is not None and old_integrity[0] == "ok":
-                        if _content_digest(old_conn) == new_digest:
-                            unchanged = True
-            except Exception:
+                    if (
+                        old_integrity is not None
+                        and old_integrity[0] == "ok"
+                        and _content_digest(old_conn) == new_digest
+                    ):
+                        unchanged = True
+            except (OSError, sqlite3.Error):
                 pass
             if unchanged:
                 copy_conn.close()
@@ -103,7 +106,7 @@ def backup_database(
         os.replace(temporary, target)
         try:
             prune(destination, "trader-", ".db", keep)
-        except Exception as exc:
+        except (OSError, RuntimeError) as exc:
             log.warning("Prune failed: %s", type(exc).__name__)
         return target, True
     finally:
@@ -144,12 +147,12 @@ def backup_logs(
             for path in files:
                 try:
                     archive.write(path, arcname=path.name)
-                except Exception as exc:
+                except (OSError, RuntimeError) as exc:
                     log.warning("Skipping log %s: %s", path.name, type(exc).__name__)
         os.replace(temporary, target)
         try:
             prune(destination, "logs-", ".zip", keep)
-        except Exception as exc:
+        except (OSError, RuntimeError) as exc:
             log.warning("Prune failed: %s", type(exc).__name__)
         return target
     finally:
@@ -196,7 +199,7 @@ def run_backup(
     keep: int = 30,
 ) -> BackupResult:
     """Run database and log backups independently and never raise."""
-    current = now or datetime.now(timezone.utc)
+    current = now or datetime.now(UTC)
     log = logging.getLogger(__name__)
     db_path_obj = Path(db_path)
     db_result: Path | None = None

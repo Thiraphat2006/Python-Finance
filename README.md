@@ -72,7 +72,7 @@ Retail CFD markets may simply not leave an edge for simple strategies one person
 src/project/
   Untility/         data loading, backtesting, walk-forward, spread fix, run_matrix
   Indicator/        indicators
-  strategy/         Moving_Avg_Logic.py, tsmom.py
+  strategy/         moving_avg_logic.py, tsmom.py
   risk/             position_sizing.py, risk_engine.py
   Execution/        paper_broker.py, replay.py, mt5_broker.py
 Test/               unit tests (risk, paper broker, spread, TSMOM, MT5 adapter with a fake MT5)

@@ -3,13 +3,12 @@
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Union
 
 _FORMAT = "%(asctime)s %(levelname)-7s %(name)s: %(message)s"
 
 
 def setup_logging(
-    log_dir: Union[str, Path] = "logs",
+    log_dir: str | Path = "logs",
     name: str = "autotrader",
     level: int = logging.INFO,
 ) -> logging.Logger:

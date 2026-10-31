@@ -1,18 +1,15 @@
-import sqlite3
 import logging
+import sqlite3
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
-
-import pytest
 
 from project.Execution import run_daily
 from project.Storage import backup as backup_module
 from project.Storage.backup import backup_database, backup_logs, prune, run_backup
 from project.Storage.trader_db import TraderDB
 
-
-NOW = datetime(2026, 10, 28, 12, tzinfo=timezone.utc)
+NOW = datetime(2026, 10, 28, 12, tzinfo=UTC)
 
 
 def test_database_backup_is_wal_safe_and_integrity_checked(tmp_path):
@@ -210,9 +207,13 @@ def test_run_backup_only_writes_logs_when_database_changes(tmp_path):
 
 
 def _args(**changes):
-    values = dict(
-        symbol="XAUUSD", db="db", log_dir="logs", backup_dir="backups", no_backup=False
-    )
+    values = {
+        "symbol": "XAUUSD",
+        "db": "db",
+        "log_dir": "logs",
+        "backup_dir": "backups",
+        "no_backup": False,
+    }
     values.update(changes)
     return SimpleNamespace(**values)
 

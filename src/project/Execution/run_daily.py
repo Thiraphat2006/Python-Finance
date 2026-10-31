@@ -11,8 +11,9 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime, timedelta, timezone
-from typing import Callable, Literal, NamedTuple, Optional
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from typing import Literal, NamedTuple
 
 import pandas as pd
 
@@ -27,9 +28,9 @@ from project.Execution.mt5_data import (
 from project.Execution.signals import ScheduledTestStrategy
 from project.Risk.position_sizing import SymbolSpec
 from project.Risk.risk_engine import RiskConfig
+from project.Storage.backup import run_backup
 from project.Storage.log_setup import setup_logging
 from project.Storage.notify import load_env, send
-from project.Storage.backup import run_backup
 from project.Storage.trader_db import TraderDB
 
 
@@ -52,8 +53,8 @@ def _alert(
     }[level]
     try:
         send(f"{emoji} {symbol} · {text}", silent=level == "ok")
-    except Exception as exc:
-        # Notifications must never change the trading flow.
+    except Exception as exc:  # noqa: BLE001
+        # Notifications must never raise or affect trading.
         logging.getLogger(__name__).warning("แจ้งเตือนไม่สำเร็จ: %s", type(exc).__name__)
 
 
@@ -75,7 +76,7 @@ def _run_trading(
         if info is None:
             log.error("ไม่พบ symbol %s", args.symbol)
             _alert(args.symbol, "error", "ไม่พบ symbol")
-            return 1
+            return TradingResult(1, None)
         if not info.visible:
             mt5.symbol_select(args.symbol, True)
         if not is_market_open(mt5, args.symbol):
@@ -162,7 +163,7 @@ def _backup_and_alert(args: argparse.Namespace) -> None:
 
 
 def main(
-    argv: Optional[list[str]] = None,
+    argv: list[str] | None = None,
     *,
     clock: Callable[[], datetime] | None = None,
     sleep: Callable[[float], None] | None = None,
@@ -183,7 +184,7 @@ def main(
             result = _run_trading(args)
             exit_code = result.code
         else:
-            now = clock or (lambda: datetime.now(timezone.utc))
+            now = clock or (lambda: datetime.now(UTC))
             wait = sleep or time.sleep
             start = now()
             deadline = start + timedelta(minutes=args.retry_until_minutes)

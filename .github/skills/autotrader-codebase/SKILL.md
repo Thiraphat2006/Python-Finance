@@ -4,7 +4,7 @@ description: Layout, module APIs, DB tables and test conventions of the Auto Tra
 ---
 # Layout (src/project)
 - Untility/: data_loader, back_testing, evaluate (walk_forward), run_matrix, spread (`fix_zero_spread`)
-- Indicator/Moving_Avg.py, strategy/Moving_Avg_Logic.py (closed), strategy/tsmom.py (not wired into the daily loop)
+- Indicator/moving_avg.py, strategy/moving_avg_logic.py (closed), strategy/tsmom.py (not wired into the daily loop)
 - risk/: position_sizing (`SymbolSpec`, `atr_stop`, `position_size`), risk_engine (`RiskConfig`, `RiskEngine`, `save_engine(db, engine)`, `load_engine(db, cfg, equity)`)
 - Execution/: paper_broker, replay (`run_paper`), mt5_broker (`MT5Broker`), signals (`Signal`, `ScheduledTestStrategy`), daily_runner (`run_once`), mt5_data, run_daily
 - Storage/: trader_db (`TraderDB`), log_setup (`setup_logging`), notify (`load_env`, `send`), backup

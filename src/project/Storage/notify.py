@@ -3,7 +3,6 @@ import os
 from pathlib import Path
 from urllib import parse, request
 
-
 log = logging.getLogger(__name__)
 
 
@@ -50,6 +49,7 @@ def send(text, *, timeout=5.0, silent=False) -> bool:
         )
         with request.urlopen(req, timeout=timeout) as response:
             return response.status == 200
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
+        # Notifications must never raise or affect trading.
         log.warning("Telegram send failed: %s", type(exc).__name__)
         return False

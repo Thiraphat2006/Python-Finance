@@ -19,7 +19,7 @@ def fix_zero_spread(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         return df, info
 
     if not isinstance(df.index, pd.DatetimeIndex):
-        raise ValueError("df.index ต้องเป็น DatetimeIndex")
+        raise TypeError("df.index ต้องเป็น DatetimeIndex")
 
     s = df["spread"].astype(float)
     zero = s <= 0

@@ -13,7 +13,7 @@
 """
 
 import time
-from typing import Optional
+from typing import Any
 
 import pandas as pd
 
@@ -45,7 +45,9 @@ class MT5Broker:
         initialize: bool = True,
     ):
         if mt5_module is None:
-            import MetaTrader5 as mt5_module  # import ตอนใช้จริงเท่านั้น (Windows)
+            import MetaTrader5 as imported_mt5  # import ตอนใช้จริงเท่านั้น (Windows)
+
+            mt5_module = imported_mt5
         self.mt5 = mt5_module
         self.spec = spec
         self.symbol = symbol
@@ -53,9 +55,9 @@ class MT5Broker:
         self.deviation = deviation
         self.max_retries = max_retries
         self.retry_sleep = retry_sleep
-        self.position: Optional[Position] = None
+        self.position: Position | None = None
         self.trades: list[Trade] = []
-        self._ticket: Optional[int] = None
+        self._ticket: int | None = None
 
         if initialize and not self.mt5.initialize():
             raise BrokerError(f"initialize ไม่สำเร็จ: {self.mt5.last_error()}")
@@ -165,7 +167,7 @@ class MT5Broker:
         return v
 
     def _send(self, request: dict):
-        last = None
+        last: Any = None
         for attempt in range(self.max_retries):
             result = self.mt5.order_send(request)
             if result is None:
@@ -185,6 +187,8 @@ class MT5Broker:
             raise BrokerError(
                 f"order ถูกปฏิเสธ retcode={result.retcode} {result.comment}"
             )
+        if last is None:
+            raise BrokerError(f"retry ครบ {self.max_retries} ครั้งแล้วยังไม่สำเร็จ")
         raise BrokerError(
             f"retry ครบ {self.max_retries} ครั้งแล้วยังไม่สำเร็จ retcode={last.retcode}"
         )
@@ -195,7 +199,9 @@ class MT5Broker:
             raise BrokerError(f"history_deals_get ล้มเหลว: {self.mt5.last_error()}")
         return list(deals)
 
-    def _build_trade(self, reason_override: Optional[str] = None) -> Trade:
+    def _build_trade(self, reason_override: str | None = None) -> Trade:
+        if self._ticket is None:
+            raise BrokerError("ไม่พบ ticket ของสถานะที่ปิด")
         deals = self._deals_for(self._ticket)
         out = [d for d in deals if d.entry == self.mt5.DEAL_ENTRY_OUT]
         if not out:
@@ -209,6 +215,8 @@ class MT5Broker:
         else:
             reason = "external"
         p = self.position
+        if p is None:
+            raise BrokerError("ไม่พบสถานะที่ปิด")
         trade = Trade(
             p.side,
             p.lots,
@@ -308,8 +316,8 @@ class MT5Broker:
         h: float = 0.0,
         l: float = 0.0,
         half_spread: float = 0.0,
-        ts: Optional[pd.Timestamp] = None,
-    ) -> Optional[Trade]:
+        ts: pd.Timestamp | None = None,
+    ) -> Trade | None:
         """ถ้าสถานะหายจาก broker (โดน SL หรือปิดมือ) -> คืน Trade จากประวัติจริง"""
         if self.position is None:
             return None

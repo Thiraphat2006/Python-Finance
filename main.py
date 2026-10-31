@@ -2,6 +2,7 @@ import logging
 
 import MetaTrader5 as mt5
 import pandas as pd
+
 from project.Execution.mt5_broker import MT5Broker
 from project.Risk.position_sizing import SymbolSpec
 
