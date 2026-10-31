@@ -118,17 +118,12 @@ class TraderDB:
         self.path = str(path)
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(self.path)
-        try:
-            self.conn = self._conn
-            self.conn.row_factory = sqlite3.Row
-            self.conn.execute("PRAGMA foreign_keys = ON")
-            if self.path != ":memory:":
-                self.conn.execute("PRAGMA journal_mode = WAL")
-            self._init_schema()
-        except BaseException:
-            self._conn.close()
-            raise
+        self.conn = sqlite3.connect(self.path)
+        self.conn.row_factory = sqlite3.Row
+        self.conn.execute("PRAGMA foreign_keys = ON")
+        if self.path != ":memory:":
+            self.conn.execute("PRAGMA journal_mode = WAL")
+        self._init_schema()
 
     def _init_schema(self) -> None:
         current = self.conn.execute("PRAGMA user_version").fetchone()[0]
