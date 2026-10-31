@@ -18,15 +18,12 @@ from typing import Literal, NamedTuple
 import pandas as pd
 
 from project.Execution.daily_runner import run_once
-from project.Execution.mt5_broker import MT5Broker
-from project.Execution.mt5_data import (
-    fetch_d1_bars,
-    get_quote,
-    get_server_now,
-    is_market_open,
+from project.Execution.mt5_session import (
+    MT5InitError,
+    MT5Session,
+    SymbolNotFoundError,
 )
 from project.Execution.signals import ScheduledTestStrategy
-from project.Risk.position_sizing import SymbolSpec
 from project.Risk.risk_engine import RiskConfig
 from project.Storage.backup import run_backup
 from project.Storage.log_setup import setup_logging
@@ -62,43 +59,53 @@ def _run_trading(
     args: argparse.Namespace, *, quiet_retryable: bool = False
 ) -> TradingResult:
     log = setup_logging(args.log_dir)
-    import MetaTrader5 as mt5  # Windows เท่านั้น
+    if args.broker != "mt5":
+        log.error("broker not implemented yet: %s", args.broker)
+        _alert(args.symbol, "error", "broker not implemented yet")
+        return TradingResult(1, None)
 
-    if not mt5.initialize():
-        log.error("initialize ไม่สำเร็จ: %s", mt5.last_error())
+    try:
+        session = MT5Session(args.symbol)
+    except Exception as exc:
+        log.exception("ลูปรายวันล้มเหลว")
+        _alert(args.symbol, "error", f"ลูปล้มเหลว {type(exc).__name__}")
+        return TradingResult(1, None)
+
+    try:
+        session.connect()
+    except MT5InitError as exc:
+        log.error("initialize ไม่สำเร็จ: %s", exc.last_error)
         if quiet_retryable:
             log.warning("initialize ไม่สำเร็จ จะลองใหม่")
         else:
             _alert(args.symbol, "error", "initialize ไม่สำเร็จ")
         return TradingResult(1, "init_failed")
+    except SymbolNotFoundError:
+        session.close()
+        log.error("ไม่พบ symbol %s", args.symbol)
+        _alert(args.symbol, "error", "ไม่พบ symbol")
+        return TradingResult(1, None)
+    except Exception as exc:
+        log.exception("ลูปรายวันล้มเหลว")
+        _alert(args.symbol, "error", f"ลูปล้มเหลว {type(exc).__name__}")
+        session.close()
+        return TradingResult(1, None)
+
     try:
-        info = mt5.symbol_info(args.symbol)
-        if info is None:
-            log.error("ไม่พบ symbol %s", args.symbol)
-            _alert(args.symbol, "error", "ไม่พบ symbol")
-            return TradingResult(1, None)
-        if not info.visible:
-            mt5.symbol_select(args.symbol, True)
-        if not is_market_open(mt5, args.symbol):
+        if not session.data.is_market_open():
             # ไม่บันทึกอะไรเลย (ไม่ใช้กุญแจของวัน, ไม่เก็บ quote เก่า) รันใหม่ตอนตลาดเปิดได้
             log.warning("ตลาด %s ปิดอยู่ (ไม่มี tick ใหม่) ข้ามรอบนี้", args.symbol)
             if not quiet_retryable:
                 _alert(args.symbol, "ok", "ตลาดปิด ข้ามรอบ")
             return TradingResult(0, "market_closed")
-        spec = SymbolSpec(
-            args.symbol,
-            point=info.point,
-            contract_size=info.trade_contract_size,
-            volume_min=info.volume_min,
-            volume_step=info.volume_step,
-            volume_max=info.volume_max,
-        )
-        broker = MT5Broker(spec, args.symbol, mt5_module=mt5, initialize=False)
+        spec = session.spec
+        if spec is None:
+            raise RuntimeError("session symbol specification unavailable")
+        broker = session.broker
         strategy = ScheduledTestStrategy(spec)
         with TraderDB(args.db) as db:
-            bars = fetch_d1_bars(
-                mt5, args.symbol, server_now=get_server_now(mt5, args.symbol)
-            )
+            server_now = session.data.get_server_now()
+            bars = session.data.fetch_d1_bars(server_now=server_now)
             result = run_once(
                 broker=broker,
                 db=db,
@@ -106,10 +113,9 @@ def _run_trading(
                 strategy=strategy,
                 spec=spec,
                 bars=bars,
-                quote=get_quote(mt5, args.symbol),
+                quote=session.data.get_quote(),
                 now=pd.Timestamp.now(tz="UTC").tz_localize(None),
-                mt5=mt5,
-                magic=broker.magic,
+                data=session.data,
                 logger=log,
             )
         if result.sync_note:
@@ -136,7 +142,7 @@ def _run_trading(
         _alert(args.symbol, "error", f"ลูปล้มเหลว {type(exc).__name__}")
         return TradingResult(1, None)
     finally:
-        mt5.shutdown()
+        session.close()
 
 
 def _backup_and_alert(args: argparse.Namespace) -> None:
@@ -177,6 +183,11 @@ def main(
     ap.add_argument("--no-backup", action="store_true")
     ap.add_argument("--retry-until-minutes", type=int, default=0)
     ap.add_argument("--retry-every-seconds", type=int, default=300)
+    ap.add_argument(
+        "--broker",
+        choices=("mt5", "capital", "paper"),
+        default=os.environ.get("AUTOTRADER_BROKER", "mt5"),
+    )
     args = ap.parse_args(argv)
     exit_code: int
     try:

@@ -20,7 +20,7 @@ from typing import Any
 
 import pandas as pd
 
-from project.Execution.mt5_data import log_recent_deals
+from project.Execution.interfaces import MarketData
 from project.Execution.signals import Signal
 from project.Risk.position_sizing import SymbolSpec, atr_stop, position_size
 from project.Risk.risk_engine import (
@@ -204,8 +204,7 @@ def run_once(
     bars: pd.DataFrame,
     quote: tuple[float, float],
     now: pd.Timestamp,
-    mt5=None,
-    magic: int | None = None,
+    data: MarketData | None = None,
     other_positions: Sequence = (),
     logger: logging.Logger | None = None,
 ) -> RunResult:
@@ -293,7 +292,7 @@ def run_once(
                 broker.cash, broker.equity(mid), broker.open_positions, ts=now
             ),
         ),
-        ("บันทึก deals", lambda: log_recent_deals(db, mt5, symbol, magic) if mt5 else 0),
+        ("บันทึก deals", lambda: data.log_recent_deals(db) if data is not None else 0),
         (
             "บันทึก ticket สถานะ",
             lambda: db.set_state(

@@ -12,6 +12,7 @@ from project.Execution.mt5_data import (
     is_market_open,
     log_recent_deals,
 )
+from project.Execution.mt5_session import MT5Data
 from project.Execution.paper_broker import PaperBroker
 from project.Execution.signals import ScheduledTestStrategy
 from project.Risk.position_sizing import SymbolSpec
@@ -470,7 +471,11 @@ def test_end_to_end_with_real_mt5broker_across_two_processes(db):
             GOLD, "XAUUSD", mt5_module=fake, initialize=False, retry_sleep=0
         )
         return broker, run(
-            db, broker, now, quote=(fake.bid, fake.ask), mt5=fake, magic=broker.magic
+            db,
+            broker,
+            now,
+            quote=(fake.bid, fake.ask),
+            data=MT5Data(fake, "XAUUSD", broker.magic),
         )
 
     broker, r = new_process_run(MON)

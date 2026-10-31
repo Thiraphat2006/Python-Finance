@@ -7,6 +7,9 @@ import pandas as pd
 import pytest
 
 from project.Execution import run_daily
+from project.Execution.mt5_broker import MT5Broker
+from project.Execution.mt5_session import MT5InitError, SymbolNotFoundError
+from project.Risk.position_sizing import SymbolSpec
 
 
 def test_alert_swallows_value_error(monkeypatch):
@@ -251,25 +254,75 @@ def daily_args(tmp_path):
         symbol="XAUUSD",
         db=str(tmp_path / "trader.db"),
         log_dir=str(tmp_path / "logs"),
+        broker="mt5",
     )
+
+
+class DailyFakeData:
+    def __init__(self, *, market_open=True):
+        self.market_open = market_open
+
+    def is_market_open(self):
+        return self.market_open
+
+    def get_server_now(self):
+        return pd.Timestamp("2026-01-01")
+
+    def fetch_d1_bars(self, **kwargs):
+        return pd.DataFrame()
+
+    def get_quote(self):
+        return (2000.0, 2000.3)
+
+    def log_recent_deals(self, db):
+        return 0
+
+
+class DailyFakeSession:
+    def __init__(self, mt5, *, market_open=True):
+        self.mt5 = mt5
+        self.market_open = market_open
+        self.spec = None
+        self.broker = None
+        self.data = None
+        self.close_calls = 0
+
+    def connect(self):
+        if not self.mt5.initialize():
+            raise MT5InitError(self.mt5.last_error())
+        info = self.mt5.symbol_info("XAUUSD")
+        if info is None:
+            raise SymbolNotFoundError("missing")
+        self.spec = SymbolSpec(
+            "XAUUSD",
+            point=info.point,
+            contract_size=info.trade_contract_size,
+            volume_min=info.volume_min,
+            volume_step=info.volume_step,
+            volume_max=info.volume_max,
+        )
+        self.broker = MT5Broker(
+            self.spec, "XAUUSD", mt5_module=self.mt5, initialize=False
+        )
+        self.data = DailyFakeData(market_open=self.market_open)
+
+    def close(self):
+        self.close_calls += 1
+        self.mt5.shutdown()
 
 
 def install_daily_dependencies(monkeypatch, mt5, *, market_open=True):
-    monkeypatch.setitem(sys.modules, "MetaTrader5", mt5)
     monkeypatch.setattr(
         run_daily, "setup_logging", lambda path: logging.getLogger("test")
     )
-    monkeypatch.setattr(run_daily, "is_market_open", lambda *_: market_open)
     monkeypatch.setattr(
-        run_daily, "fetch_d1_bars", lambda *args, **kwargs: pd.DataFrame()
+        run_daily,
+        "MT5Session",
+        lambda symbol: DailyFakeSession(mt5, market_open=market_open),
     )
-    monkeypatch.setattr(
-        run_daily, "get_server_now", lambda *args: pd.Timestamp("2026-01-01")
-    )
-    monkeypatch.setattr(run_daily, "get_quote", lambda *args: SimpleNamespace())
 
 
-def test_run_trading_initialize_failure_alerts(monkeypatch, tmp_path):
+def test_run_trading_initialize_failure_alerts(monkeypatch, tmp_path, caplog):
     class FailedMT5(DailyFakeMT5):
         def initialize(self):
             return False
@@ -283,11 +336,19 @@ def test_run_trading_initialize_failure_alerts(monkeypatch, tmp_path):
 
     assert result == run_daily.TradingResult(1, "init_failed")
     assert alerts == [("XAUUSD", "error", "initialize ไม่สำเร็จ")]
+    assert "initialize ไม่สำเร็จ: unavailable" in caplog.text
 
 
 def test_run_trading_missing_symbol_alerts(monkeypatch, tmp_path):
     mt5 = DailyFakeMT5(symbol=False)
-    install_daily_dependencies(monkeypatch, mt5)
+    sessions = []
+
+    def make_session(symbol):
+        session = DailyFakeSession(mt5)
+        sessions.append(session)
+        return session
+
+    monkeypatch.setattr(run_daily, "MT5Session", make_session)
     alerts = []
     monkeypatch.setattr(run_daily, "_alert", lambda *args: alerts.append(args))
 
@@ -295,6 +356,7 @@ def test_run_trading_missing_symbol_alerts(monkeypatch, tmp_path):
 
     assert result == run_daily.TradingResult(1, None)
     assert alerts == [("XAUUSD", "error", "ไม่พบ symbol")]
+    assert sessions[0].close_calls == 1
 
 
 def test_run_trading_market_closed_sends_ok_alert(monkeypatch, tmp_path):
@@ -372,3 +434,45 @@ def test_run_trading_sync_note_and_error_alerts(monkeypatch, tmp_path):
         ("XAUUSD", "warn", "สถานะไม่ตรง broker: ticket mismatch"),
         ("XAUUSD", "error", "database failure"),
     ]
+
+
+@pytest.mark.parametrize("broker", ["capital", "paper"])
+def test_run_trading_unimplemented_broker_does_not_touch_mt5(
+    monkeypatch, tmp_path, broker
+):
+    touched = []
+    alerts = []
+
+    class UnexpectedSession:
+        def __init__(self, symbol):
+            touched.append(symbol)
+
+    monkeypatch.setattr(run_daily, "MT5Session", UnexpectedSession)
+    monkeypatch.setattr(
+        run_daily, "setup_logging", lambda path: logging.getLogger("test")
+    )
+    monkeypatch.setattr(run_daily, "_alert", lambda *args: alerts.append(args))
+    args = daily_args(tmp_path)
+    args.broker = broker
+
+    assert run_daily._run_trading(args) == run_daily.TradingResult(1, None)
+    assert touched == []
+    assert alerts == [("XAUUSD", "error", "broker not implemented yet")]
+
+
+def test_run_trading_session_constructor_failure_alerts(monkeypatch, tmp_path):
+    class BrokenSession:
+        def __init__(self, symbol):
+            raise ImportError("MetaTrader5 unavailable")
+
+    monkeypatch.setattr(run_daily, "MT5Session", BrokenSession)
+    monkeypatch.setattr(
+        run_daily, "setup_logging", lambda path: logging.getLogger("test")
+    )
+    alerts = []
+    monkeypatch.setattr(run_daily, "_alert", lambda *args: alerts.append(args))
+
+    result = run_daily._run_trading(daily_args(tmp_path))
+
+    assert result == run_daily.TradingResult(1, None)
+    assert alerts == [("XAUUSD", "error", "ลูปล้มเหลว ImportError")]
