@@ -1,0 +1,90 @@
+name: Quality
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.13
+        run: uv python install 3.13
+
+      - name: Sync locked dependencies
+        run: uv sync --locked
+
+      - name: Run Ruff check
+        run: uv run ruff check .
+
+      - name: Check Ruff formatting
+        run: uv run ruff format --check .
+
+      - name: Run mypy
+        run: uv run mypy src/
+
+      - name: Run coverage tests
+        run: uv run pytest --cov=src --cov-branch --cov-report=term-missing --cov-fail-under=80
+
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check tracked file hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          forbidden_paths=()
+          while IFS= read -r -d '' path; do
+            case "$path" in
+              .env|*/.env|*.db|logs/*|*/logs/*|diff.txt|*/diff.txt|handoff.md|*/handoff.md)
+                forbidden_paths+=("$path")
+                ;;
+            esac
+          done < <(git ls-files -z)
+
+          if ((${#forbidden_paths[@]} > 0)); then
+            printf 'Forbidden tracked paths found:\n%s\n' "${forbidden_paths[*]}"
+            exit 1
+          fi
+
+      - name: Check Python filename hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          invalid_python_files=()
+          while IFS= read -r -d '' path; do
+            filename="${path##*/}"
+            if [[ "$filename" == *.py && "$filename" != __*__.py &&
+              ! "$filename" =~ ^[a-z0-9]+(_[a-z0-9]+)*\.py$ ]]; then
+              invalid_python_files+=("$path")
+            fi
+          done < <(git ls-files -z src)
+
+          if ((${#invalid_python_files[@]} > 0)); then
+            printf 'Python files must use snake_case:\n%s\n' "${invalid_python_files[*]}"
+            exit 1
+          fi
