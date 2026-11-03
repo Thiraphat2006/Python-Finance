@@ -881,7 +881,7 @@ name = "metatrader5"
 version = "5.0.5735"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy" },
+    { name = "numpy", marker = "sys_platform == 'win32'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/87/2c/7ffc362d84f402b97773be5c6b37f1a0ab9882244c987bbb224c379d17d8/metatrader5-5.0.5735-cp313-cp313-win_amd64.whl", hash = "sha256:0933ea4a9a52b32adcf5590df00f9f75ff380a02bad7b62e23cbd757f34fbb12", size = 48071, upload-time = "2026-04-04T16:44:11.09Z" },
@@ -1479,7 +1479,7 @@ name = "python-finance"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "metatrader5" },
+    { name = "metatrader5", marker = "sys_platform == 'win32'" },
     { name = "numpy" },
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
     { name = "pandas", version = "3.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
@@ -1503,7 +1503,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "metatrader5", specifier = ">=5.0.5735" },
+    { name = "metatrader5", marker = "sys_platform == 'win32'", specifier = ">=5.0.5735" },
     { name = "numpy", specifier = ">=2.2.6" },
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "pandas-ta", specifier = ">=0.4.71b0" },
