@@ -99,57 +99,85 @@ def print_summary(
     positions: Any,
     prices: Any,
     server_time: Any,
+    preferences: Any,
+    session: Any,
 ) -> None:
+    missing = "MISSING"
+
+    def field(data: Any, key: str) -> Any:
+        return data.get(key, missing) if isinstance(data, dict) else missing
+
+    def rule(data: Any, key: str) -> str:
+        item = field(data, key)
+        if item == missing:
+            return missing
+        return format_rule(item)
+
     market_items = markets.get("markets", []) if isinstance(markets, dict) else []
     epic_found = any(
         isinstance(item, dict) and item.get("epic") == epic for item in market_items
     )
+    snapshot = market.get("snapshot", {})
     instrument = market.get("instrument", {})
     rules = market.get("dealingRules", {})
-    hours = market.get("openingHours", {})
+    hours = field(instrument, "openingHours")
     prices_items = prices.get("prices", []) if isinstance(prices, dict) else []
     position_items = (
         positions.get("positions", []) if isinstance(positions, dict) else []
     )
-    first = prices_items[0] if prices_items else {}
-    last = prices_items[-1] if prices_items else {}
-    currency = value(
-        instrument, "currency", "code", default=value(instrument, "currency")
+    spread = (
+        snapshot["offer"] - snapshot["bid"]
+        if isinstance(snapshot.get("offer"), (int, float))
+        and isinstance(snapshot.get("bid"), (int, float))
+        else missing
     )
+    last_bars = prices_items[-3:]
+    if hours == missing:
+        opening_hours = missing
+    elif isinstance(hours, dict):
+        opening_hours = "; ".join(
+            f"{day}={hours.get(day, missing)}"
+            for day in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+        )
+        opening_hours += f"; zone={hours.get('zone', missing)}"
+    else:
+        opening_hours = str(hours)
     print(f"epic found: {epic_found}")
     print(
         "marketStatus: "
-        f"{market.get('marketStatus')}; "
-        f"bid/offer/spread: {market.get('bid')}/{market.get('offer')}/"
-        f"{market.get('spread')}"
+        f"{field(snapshot, 'marketStatus')}; "
+        f"bid/offer/spread: {field(snapshot, 'bid')}/{field(snapshot, 'offer')}/"
+        f"{spread}; updateTime={field(snapshot, 'updateTime')}; "
+        f"marketModes={field(snapshot, 'marketModes')}"
     )
     print(
         "instrument: "
-        f"lotSize={instrument.get('lotSize')}; "
-        f"type/currency/marginFactor={instrument.get('type')}/{currency}/"
-        f"{instrument.get('marginFactor')}"
+        f"lotSize={field(instrument, 'lotSize')}; "
+        f"type/currency/marginFactor={field(instrument, 'type')}/"
+        f"{field(instrument, 'currency')}/{field(instrument, 'marginFactor')}; "
+        f"marginFactorUnit={field(instrument, 'marginFactorUnit')}; "
+        f"guaranteedStopAllowed={field(instrument, 'guaranteedStopAllowed')}"
     )
     print(
         "dealingRules: "
-        f"minDealSize={format_rule(rules.get('minDealSize'))}, "
-        f"maxDealSize={format_rule(rules.get('maxDealSize'))}, "
-        f"minSizeIncrement={format_rule(rules.get('minSizeIncrement'))}, "
+        f"minDealSize={rule(rules, 'minDealSize')}, "
+        f"maxDealSize={rule(rules, 'maxDealSize')}, "
+        f"minSizeIncrement={rule(rules, 'minSizeIncrement')}, "
         "minStopOrProfitDistance="
-        f"{format_rule(rules.get('minStopOrProfitDistance'))}"
+        f"{rule(rules, 'minStopOrProfitDistance')}"
     )
-    print(f"openingHours: {format_opening_hours(hours)}")
-    print(f"overnightFee: {market.get('overnightFee')}")
-    print(f"hedgingMode: {market.get('hedgingMode')}")
+    print(f"openingHours: {opening_hours}")
+    print(f"overnightFee: {field(instrument, 'overnightFee')}")
+    print(f"hedgingMode: {field(preferences, 'hedgingMode')}")
+    print(f"leverages: {field(preferences, 'leverages')}")
     print(f"open positions: {len(position_items)}")
     print(
         "DAY bars: "
-        f"first={first.get('snapshotTimeUTC')}/{first.get('snapshotTime')}; "
-        f"last={last.get('snapshotTimeUTC')}/{last.get('snapshotTime')}"
+        f"count={len(prices_items)}; last3="
+        f"{[(field(bar, 'snapshotTime'), field(bar, 'snapshotTimeUTC')) for bar in last_bars]}"
     )
-    timezone_offset = (
-        server_time.get("timezoneOffset") if isinstance(server_time, dict) else None
-    )
-    print(f"timezoneOffset: {market.get('timezoneOffset', timezone_offset)}")
+    print(f"timezoneOffset: {field(session, 'timezoneOffset')}")
+    print(f"serverTime: {field(server_time, 'serverTime')}")
 
 
 def run(epic: str) -> None:
@@ -216,6 +244,8 @@ def run(epic: str) -> None:
                 payloads["positions.json"],
                 payloads[f"prices_day_{epic}.json"],
                 payloads["time.json"],
+                payloads["preferences.json"],
+                payloads["session.json"],
             )
         finally:
             if session_started:
