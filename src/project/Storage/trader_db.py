@@ -305,6 +305,10 @@ class TraderDB:
         ).fetchone()
         return row[0] if row else default
 
+    def delete_state(self, key: str) -> None:
+        with self.conn:
+            self.conn.execute("DELETE FROM state WHERE key=?", (key,))
+
     # ---------- generic read ----------
     def query(self, sql: str, params: tuple = ()) -> list[dict]:
         return [dict(r) for r in self.conn.execute(sql, params).fetchall()]

@@ -40,6 +40,24 @@ class RunResult:
     sync_note: str | None = None
 
 
+def _open_ticket_key(broker: str, strategy: str, symbol: str) -> str:
+    return f"open_ticket:{broker}:{strategy}:{symbol}"
+
+
+def _persist_open_ticket_state(
+    db: Any, broker: Any, state_key: str, legacy_state_key: str, broker_name: str
+) -> None:
+    if getattr(broker, "position", None) is None:
+        db.delete_state(state_key)
+        if broker_name == "mt5":
+            db.delete_state(legacy_state_key)
+        return
+    db.set_state(
+        state_key,
+        "" if getattr(broker, "_ticket", None) is None else broker._ticket,
+    )
+
+
 def _order(symbol: str, kind: str, side: str, lots: float, ok: bool, **kw: Any) -> dict:
     return {"symbol": symbol, "kind": kind, "side": side, "lots": lots, "ok": ok, **kw}
 
@@ -207,12 +225,14 @@ def run_once(
     data: MarketData | None = None,
     other_positions: Sequence = (),
     logger: logging.Logger | None = None,
+    broker_name: str = "mt5",
 ) -> RunResult:
     """bars = แท่ง D1 ที่ปิดแล้ว (คอลัมน์ open/high/low/close/atr), quote = (bid, ask), now = UTC แบบ naive
     other_positions = [(position, spec)] ของ symbol อื่น (ไว้นับ open risk รวมเมื่อขยายเป็นหลาย symbol)"""
     log = logger or logging.getLogger("autotrader")
     symbol = spec.symbol
-    state_key = f"open_ticket:{strategy.name}:{symbol}"
+    state_key = _open_ticket_key(broker_name, strategy.name, symbol)
+    legacy_state_key = f"open_ticket:{strategy.name}:{symbol}"
     key = strategy.key(bars, now)
     if db.already_processed(strategy.name, symbol, key):
         log.info("ข้าม: %s %s ประมวลผลแล้ว (%s)", strategy.name, symbol, key)
@@ -222,9 +242,15 @@ def run_once(
     mid, hs = (bid + ask) / 2, (ask - bid) / 2
     spread_pts = (ask - bid) / spec.point
 
+    raw_ticket = db.get_state(state_key)
+    if raw_ticket is None and broker_name == "mt5":
+        raw_ticket = db.get_state(legacy_state_key)
+        if raw_ticket is not None:
+            db.set_state(state_key, raw_ticket)
+            db.delete_state(legacy_state_key)
+
     sync_note = None
     if hasattr(broker, "sync"):  # live broker: ดึงสถานะจริงก่อนตัดสินใจทุกครั้ง
-        raw_ticket = db.get_state(state_key)
         expected_ticket = int(raw_ticket) if raw_ticket not in (None, "") else None
         sync_method = broker.sync
         if "expected_ticket" in inspect.signature(sync_method).parameters:
@@ -295,9 +321,8 @@ def run_once(
         ("บันทึก deals", lambda: data.log_recent_deals(db) if data is not None else 0),
         (
             "บันทึก ticket สถานะ",
-            lambda: db.set_state(
-                state_key,
-                "" if getattr(broker, "_ticket", None) is None else broker._ticket,
+            lambda: _persist_open_ticket_state(
+                db, broker, state_key, legacy_state_key, broker_name
             ),
         ),
     ):

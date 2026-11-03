@@ -1,3 +1,4 @@
+import importlib
 import logging
 import sys
 from datetime import UTC, datetime, timedelta
@@ -10,6 +11,41 @@ from project.Execution import run_daily
 from project.Execution.mt5_broker import MT5Broker
 from project.Execution.mt5_session import MT5InitError, SymbolNotFoundError
 from project.Risk.position_sizing import SymbolSpec
+
+
+def test_run_daily_help_and_non_mt5_broker_do_not_import_mt5(monkeypatch, tmp_path):
+    monkeypatch.setitem(sys.modules, "MetaTrader5", None)
+    original_module_state = run_daily.__dict__.copy()
+    try:
+        module = importlib.reload(run_daily)
+        monkeypatch.setattr(module, "load_env", lambda: None)
+        monkeypatch.setattr(module, "_alert", lambda *args: None)
+        monkeypatch.setattr(
+            module, "setup_logging", lambda path: logging.getLogger("test")
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            module.main(["--help"])
+
+        assert exc_info.value.code == 0
+        assert (
+            module.main(
+                [
+                    "--broker",
+                    "capital",
+                    "--db",
+                    str(tmp_path / "trader.db"),
+                    "--log-dir",
+                    str(tmp_path / "logs"),
+                    "--no-backup",
+                ]
+            )
+            == 1
+        )
+        assert sys.modules["MetaTrader5"] is None
+    finally:
+        run_daily.__dict__.clear()
+        run_daily.__dict__.update(original_module_state)
 
 
 def test_alert_swallows_value_error(monkeypatch):
@@ -469,6 +505,23 @@ def test_run_trading_session_constructor_failure_alerts(monkeypatch, tmp_path):
     monkeypatch.setattr(
         run_daily, "setup_logging", lambda path: logging.getLogger("test")
     )
+    alerts = []
+    monkeypatch.setattr(run_daily, "_alert", lambda *args: alerts.append(args))
+
+    result = run_daily._run_trading(daily_args(tmp_path))
+
+    assert result == run_daily.TradingResult(1, None)
+    assert alerts == [("XAUUSD", "error", "ลูปล้มเหลว ImportError")]
+
+
+def test_run_trading_component_import_failure_alerts(monkeypatch, tmp_path):
+    def fail_to_load():
+        raise ImportError("MetaTrader5 unavailable")
+
+    monkeypatch.setattr(
+        run_daily, "setup_logging", lambda path: logging.getLogger("test")
+    )
+    monkeypatch.setattr(run_daily, "_load_mt5_components", fail_to_load)
     alerts = []
     monkeypatch.setattr(run_daily, "_alert", lambda *args: alerts.append(args))
 

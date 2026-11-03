@@ -6,6 +6,8 @@ Exit code: 0 = สำเร็จหรือข้ามเพราะรั�
 ปฏิเสธบัญชีที่ไม่ใช่ demo เสมอ (ไม่มีตัวเลือก allow_live ที่นี่โดยตั้งใจ)
 """
 
+from __future__ import annotations
+
 import argparse
 import logging
 import os
@@ -13,16 +15,11 @@ import sys
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Literal, NamedTuple
+from typing import TYPE_CHECKING, Literal, NamedTuple
 
 import pandas as pd
 
 from project.Execution.daily_runner import run_once
-from project.Execution.mt5_session import (
-    MT5InitError,
-    MT5Session,
-    SymbolNotFoundError,
-)
 from project.Execution.signals import ScheduledTestStrategy
 from project.Risk.risk_engine import RiskConfig
 from project.Storage.backup import run_backup
@@ -30,10 +27,39 @@ from project.Storage.log_setup import setup_logging
 from project.Storage.notify import load_env, send
 from project.Storage.trader_db import TraderDB
 
+if TYPE_CHECKING:
+    from project.Execution.mt5_session import (
+        MT5InitError as MT5InitErrorType,
+    )
+    from project.Execution.mt5_session import MT5Session as MT5SessionType
+    from project.Execution.mt5_session import (
+        SymbolNotFoundError as SymbolNotFoundErrorType,
+    )
+
+MT5InitError: type[MT5InitErrorType] | None = None
+MT5Session: type[MT5SessionType] | None = None
+SymbolNotFoundError: type[SymbolNotFoundErrorType] | None = None
+
 
 class TradingResult(NamedTuple):
     code: int
     retry_reason: Literal["market_closed", "init_failed"] | None
+
+
+def _load_mt5_components() -> None:
+    global MT5InitError, MT5Session, SymbolNotFoundError
+    if MT5Session is None or MT5InitError is None or SymbolNotFoundError is None:
+        from project.Execution.mt5_session import (
+            MT5InitError as imported_mt5_init_error,
+        )
+        from project.Execution.mt5_session import MT5Session as imported_mt5_session
+        from project.Execution.mt5_session import (
+            SymbolNotFoundError as imported_symbol_not_found_error,
+        )
+
+        MT5InitError = imported_mt5_init_error
+        MT5Session = imported_mt5_session
+        SymbolNotFoundError = imported_symbol_not_found_error
 
 
 def _alert(
@@ -65,6 +91,9 @@ def _run_trading(
         return TradingResult(1, None)
 
     try:
+        _load_mt5_components()
+        if MT5Session is None or MT5InitError is None or SymbolNotFoundError is None:
+            raise RuntimeError("MT5 components failed to load")
         session = MT5Session(args.symbol)
     except Exception as exc:
         log.exception("ลูปรายวันล้มเหลว")
@@ -117,6 +146,7 @@ def _run_trading(
                 now=pd.Timestamp.now(tz="UTC").tz_localize(None),
                 data=session.data,
                 logger=log,
+                broker_name=args.broker,
             )
         if result.sync_note:
             _alert(args.symbol, "warn", f"สถานะไม่ตรง broker: {result.sync_note}")

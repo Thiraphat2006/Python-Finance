@@ -20,8 +20,10 @@ results_spreadfix/
 data/*.db
 data/*.db-wal
 data/*.db-shm
+data/probe/
 logs/
 
 .coverage
 htmlcov/
 diff.txt
+handoff.md
