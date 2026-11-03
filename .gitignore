@@ -25,3 +25,4 @@ logs/
 .coverage
 htmlcov/
 diff.txt
+handoff.md

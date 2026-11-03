@@ -156,6 +156,60 @@ def test_risk_state_persists_between_runs(db):
     assert e.peak_equity >= 10_000 - 1 and e.day == MON.date()
 
 
+def test_open_ticket_state_uses_broker_namespace(db):
+    b = PaperBroker(GOLD, 10_000)
+    b._ticket = 123
+    run(db, b, MON)
+    assert db.get_state("open_ticket:mt5:test_schedule:XAUUSD") == "123"
+    assert db.get_state("open_ticket:test_schedule:XAUUSD") is None
+
+
+@pytest.mark.parametrize(
+    ("broker_name", "expected_ticket", "legacy_after"),
+    [("mt5", 123, None), ("capital", None, "123")],
+)
+def test_legacy_open_ticket_migration_is_broker_scoped(
+    db, broker_name, expected_ticket, legacy_after
+):
+    class TrackingBroker(PaperBroker):
+        def __init__(self):
+            super().__init__(GOLD, 10_000)
+            self.expected_tickets = []
+
+        def sync(self, expected_ticket=None):
+            self.expected_tickets.append(expected_ticket)
+
+    db.set_state("open_ticket:test_schedule:XAUUSD", "123")
+    b = TrackingBroker()
+    run(db, b, MON, broker_name=broker_name)
+    assert b.expected_tickets == [expected_ticket]
+    assert db.get_state("open_ticket:capital:test_schedule:XAUUSD") == (
+        "" if broker_name == "capital" else None
+    )
+    assert db.get_state("open_ticket:mt5:test_schedule:XAUUSD") == (
+        "" if broker_name == "mt5" else None
+    )
+    assert db.get_state("open_ticket:test_schedule:XAUUSD") == legacy_after
+
+
+def test_clearing_mt5_position_removes_new_and_legacy_ticket_keys(db):
+    b = PaperBroker(GOLD, 10_000)
+    run(db, b, MON)
+    db.set_state("open_ticket:test_schedule:XAUUSD", "123")
+    run(db, b, TUE)
+    assert db.get_state("open_ticket:mt5:test_schedule:XAUUSD") is None
+    assert db.get_state("open_ticket:test_schedule:XAUUSD") is None
+
+
+def test_clearing_capital_position_keeps_legacy_mt5_ticket_key(db):
+    b = PaperBroker(GOLD, 10_000)
+    run(db, b, MON, broker_name="capital")
+    db.set_state("open_ticket:test_schedule:XAUUSD", "123")
+    run(db, b, TUE, broker_name="capital")
+    assert db.get_state("open_ticket:capital:test_schedule:XAUUSD") is None
+    assert db.get_state("open_ticket:test_schedule:XAUUSD") == "123"
+
+
 # ---------- ผิดพลาด ----------
 class Boom(PaperBroker):
     def open(self, *a, **k):

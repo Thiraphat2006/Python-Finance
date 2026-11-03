@@ -117,6 +117,7 @@ def _run_trading(
                 now=pd.Timestamp.now(tz="UTC").tz_localize(None),
                 data=session.data,
                 logger=log,
+                broker_name=args.broker,
             )
         if result.sync_note:
             _alert(args.symbol, "warn", f"สถานะไม่ตรง broker: {result.sync_note}")
