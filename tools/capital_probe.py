@@ -1,26 +1,27 @@
 import argparse
 import json
-import os
-import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-import httpx
-
+from project.Execution.capital_client import (
+    CapitalApiError,
+    CapitalClient,
+    CapitalClientError,
+)
 from project.Storage.notify import load_env
 
 BASE_URL = "https://demo-api-capital.backend-capital.com/api/v1"
 EXPECTED_HOST = "demo-api-capital.backend-capital.com"
 PROBE_DIR = Path("data/probe")
 REDACTED = "<redacted>"
-REDACT_KEYS = {"accountId", "clientId", "currentAccountId"}
-REQUEST_DELAY = 1.1
+REDACT_KEYS = {"accountId", "accountName", "clientId", "currentAccountId"}
 
 
 class ProbeStopped(Exception):
-    def __init__(self, status: int) -> None:
+    def __init__(self, status: int, error_keys: tuple[str, ...] = ()) -> None:
         self.status = status
+        self.error_keys = error_keys
 
 
 def redact(value: Any) -> Any:
@@ -34,29 +35,19 @@ def redact(value: Any) -> Any:
     return value
 
 
-def save_response(name: str, response: httpx.Response) -> Any:
-    payload = redact(response.json())
+def save_response(name: str, payload: Any) -> Any:
     (PROBE_DIR / name).write_text(
-        json.dumps(payload, indent=2, ensure_ascii=True) + "\n",
+        json.dumps(redact(payload), indent=2, ensure_ascii=True) + "\n",
         encoding="utf-8",
     )
     return payload
 
 
-def request_json(
-    client: httpx.Client,
-    method: str,
-    path: str,
-    *,
-    headers: dict[str, str] | None = None,
-    json_body: dict[str, Any] | None = None,
-) -> httpx.Response:
-    time.sleep(REQUEST_DELAY)
-    response = client.request(method, path, headers=headers, json=json_body)
-    if response.status_code in (401, 429):
-        raise ProbeStopped(response.status_code)
-    response.raise_for_status()
-    return response
+def get_payload(client: CapitalClient, path: str) -> dict[str, Any]:
+    try:
+        return client.get(path)
+    except CapitalApiError as exc:
+        raise ProbeStopped(exc.status_code, exc.error_keys) from None
 
 
 def value(data: dict[str, Any], *keys: str, default: Any = None) -> Any:
@@ -90,6 +81,60 @@ def format_opening_hours(hours: Any) -> str:
         )
     )
     return f"{days}; zone={hours.get('zone')}"
+
+
+def mask_identifier(value: Any) -> str:
+    text = str(value)
+    return f"{text[:3]}***"
+
+
+def print_accounts_summary(accounts: Any, preferences: Any) -> bool:
+    if not isinstance(accounts, dict) or "accounts" not in accounts:
+        print("accounts: MISSING")
+        return False
+    account_items = accounts["accounts"]
+    if not isinstance(account_items, list):
+        print("accounts: MISSING (accounts is not a list)")
+        return False
+    valid = True
+    print(f"accounts: {len(account_items)}")
+    for index, account in enumerate(account_items, start=1):
+        if not isinstance(account, dict):
+            print(f"account[{index}] is not an object")
+            valid = False
+            continue
+        keys = sorted(str(key) for key in account)
+        print(f"account[{index}] keys: {keys}")
+        identifiers = []
+        for key in ("accountId", "accountName"):
+            if key in account:
+                identifiers.append(f"{key}={mask_identifier(account[key])}")
+        if identifiers:
+            print(f"account[{index}] identifiers: {', '.join(identifiers)}")
+        balance = account.get("balance")
+        if isinstance(balance, dict):
+            balance_parts = [
+                f"{key}({type(value).__name__})={value}"
+                for key, value in sorted(balance.items())
+            ]
+            print(f"account[{index}] balance: {', '.join(balance_parts)}")
+        else:
+            print(f"account[{index}] balance: MISSING")
+            valid = False
+        preference_parts = [
+            f"{key}={account[key]}"
+            for key in ("currency", "hedgingMode", "accountType")
+            if key in account
+        ]
+        if isinstance(preferences, dict):
+            preference_parts.extend(
+                f"{key}={preferences[key]}"
+                for key in ("currency", "hedgingMode", "accountType")
+                if key in preferences and key not in account
+            )
+        if preference_parts:
+            print(f"account[{index}] preferences: {', '.join(preference_parts)}")
+    return valid
 
 
 def print_summary(
@@ -185,71 +230,42 @@ def run(epic: str) -> None:
         raise RuntimeError("Probe base URL host is not the Capital.com demo host")
 
     load_env()
-    credentials = {
-        "CAP_API_KEY": os.environ.get("CAP_API_KEY"),
-        "CAP_IDENTIFIER": os.environ.get("CAP_IDENTIFIER"),
-        "CAP_API_PASSWORD": os.environ.get("CAP_API_PASSWORD"),
-    }
-    if not all(credentials.values()):
-        raise RuntimeError(
-            "CAP_API_KEY, CAP_IDENTIFIER, and CAP_API_PASSWORD must be set in .env"
-        )
-
     PROBE_DIR.mkdir(parents=True, exist_ok=True)
-    token_headers: dict[str, str] = {}
-    session_started = False
-    with httpx.Client(timeout=10.0, base_url=BASE_URL) as client:
-        try:
-            response = request_json(
-                client,
-                "POST",
-                "/session",
-                headers={"X-CAP-API-KEY": credentials["CAP_API_KEY"] or ""},
-                json_body={
-                    "identifier": credentials["CAP_IDENTIFIER"],
-                    "password": credentials["CAP_API_PASSWORD"],
-                    "encryptedPassword": False,
-                },
+    payloads: dict[str, Any] = {}
+    with CapitalClient.from_env() as client:
+        get_calls = [
+            ("/session", "session.json"),
+            ("/accounts", "accounts.json"),
+            ("/accounts/preferences", "preferences.json"),
+            ("/markets?searchTerm=gold", "markets_search_gold.json"),
+            (f"/markets/{epic}", f"market_{epic}.json"),
+            (f"/prices/{epic}?resolution=DAY&max=30", f"prices_day_{epic}.json"),
+            ("/positions", "positions.json"),
+            ("/workingorders", "workingorders.json"),
+            ("/time", "time.json"),
+        ]
+        for path, filename in get_calls:
+            payloads[filename] = save_response(filename, get_payload(client, path))
+        if not print_accounts_summary(
+            payloads["accounts.json"], payloads["preferences.json"]
+        ):
+            account_payload = payloads["accounts.json"]
+            keys = (
+                sorted(str(key) for key in account_payload)
+                if isinstance(account_payload, dict)
+                else []
             )
-            session_started = True
-            token_headers = {
-                "CST": response.headers["CST"],
-                "X-SECURITY-TOKEN": response.headers["X-SECURITY-TOKEN"],
-            }
-            save_response("session.json", response)
-
-            get_calls = [
-                ("/session", "session.json", token_headers),
-                ("/accounts", "accounts.json", token_headers),
-                ("/accounts/preferences", "preferences.json", token_headers),
-                ("/markets?searchTerm=gold", "markets_search_gold.json", token_headers),
-                (f"/markets/{epic}", f"market_{epic}.json", token_headers),
-                (
-                    f"/prices/{epic}?resolution=DAY&max=30",
-                    f"prices_day_{epic}.json",
-                    token_headers,
-                ),
-                ("/positions", "positions.json", token_headers),
-                ("/workingorders", "workingorders.json", token_headers),
-                ("/time", "time.json", None),
-            ]
-            payloads: dict[str, Any] = {}
-            for path, filename, headers in get_calls:
-                response = request_json(client, "GET", path, headers=headers)
-                payloads[filename] = save_response(filename, response)
-            print_summary(
-                epic,
-                payloads["markets_search_gold.json"],
-                payloads[f"market_{epic}.json"],
-                payloads["positions.json"],
-                payloads[f"prices_day_{epic}.json"],
-                payloads["time.json"],
-                payloads["preferences.json"],
-                payloads["session.json"],
-            )
-        finally:
-            if session_started:
-                request_json(client, "DELETE", "/session", headers=token_headers)
+            raise RuntimeError(f"Unexpected /accounts response shape; keys: {keys}")
+        print_summary(
+            epic,
+            payloads["markets_search_gold.json"],
+            payloads[f"market_{epic}.json"],
+            payloads["positions.json"],
+            payloads[f"prices_day_{epic}.json"],
+            payloads["time.json"],
+            payloads["preferences.json"],
+            payloads["session.json"],
+        )
 
 
 def main() -> None:
@@ -260,6 +276,11 @@ def main() -> None:
         run(args.epic)
     except ProbeStopped as exc:
         print(f"HTTP status: {exc.status}")
+        print(f"error body keys: {list(exc.error_keys)}")
+        raise SystemExit(1) from None
+    except (CapitalClientError, RuntimeError, ValueError) as exc:
+        print(f"Probe failed: {exc}")
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":

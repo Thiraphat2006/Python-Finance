@@ -23,9 +23,15 @@ class CapitalAuthError(CapitalClientError):
 class CapitalApiError(CapitalClientError):
     """The Capital.com API returned a non-success status."""
 
-    def __init__(self, status_code: int, error_code: str | None = None) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        error_code: str | None = None,
+        error_keys: tuple[str, ...] = (),
+    ) -> None:
         self.status_code = status_code
         self.error_code = error_code
+        self.error_keys = error_keys
         detail = f", errorCode={error_code}" if error_code is not None else ""
         super().__init__(f"Capital.com API error: status={status_code}{detail}")
 
@@ -216,10 +222,13 @@ class CapitalClient:
     @staticmethod
     def _api_error(response: httpx.Response) -> CapitalApiError:
         error_code: str | None = None
+        error_keys: tuple[str, ...] = ()
         try:
             payload = response.json()
         except ValueError:
             payload = None
-        if isinstance(payload, dict) and payload.get("errorCode") is not None:
-            error_code = str(payload["errorCode"])
-        return CapitalApiError(response.status_code, error_code)
+        if isinstance(payload, dict):
+            error_keys = tuple(sorted(str(key) for key in payload))
+            if payload.get("errorCode") is not None:
+                error_code = str(payload["errorCode"])
+        return CapitalApiError(response.status_code, error_code, error_keys)
