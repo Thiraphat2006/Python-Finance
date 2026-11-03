@@ -76,6 +76,16 @@ def test_order_requires_existing_run(db):
     assert row["fill_price"] == 2000.3 and row["ok"] == 1
 
 
+def test_order_accepts_uuid_string_ticket(db):
+    run_id = db.log_run("test", "XAUUSD", "2026-10-26", "enter")
+    oid = db.log_order(
+        "XAUUSD", "open", "long", 0.01, ok=True, run_id=run_id, ticket="abc-uuid"
+    )
+    assert db.query("SELECT ticket FROM orders WHERE order_id=?", (oid,))[0][
+        "ticket"
+    ] == ("abc-uuid")
+
+
 def test_log_deal_idempotent_and_accepts_namedtuple_like(db):
     deal = SimpleNamespace(
         ticket=555,
