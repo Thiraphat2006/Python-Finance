@@ -210,7 +210,7 @@ class TraderDB:
         fill_price: float | None = None,
         sl: float | None = None,
         retcode: int | None = None,
-        ticket: int | None = None,
+        ticket: int | str | None = None,
         comment: str | None = None,
     ) -> int:
         with self.conn:

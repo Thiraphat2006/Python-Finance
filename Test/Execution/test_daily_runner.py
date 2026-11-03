@@ -166,7 +166,7 @@ def test_open_ticket_state_uses_broker_namespace(db):
 
 @pytest.mark.parametrize(
     ("broker_name", "expected_ticket", "legacy_after"),
-    [("mt5", 123, None), ("capital", None, "123")],
+    [("mt5", "123", None), ("capital", None, "123")],
 )
 def test_legacy_open_ticket_migration_is_broker_scoped(
     db, broker_name, expected_ticket, legacy_after
@@ -190,6 +190,21 @@ def test_legacy_open_ticket_migration_is_broker_scoped(
         "" if broker_name == "mt5" else None
     )
     assert db.get_state("open_ticket:test_schedule:XAUUSD") == legacy_after
+
+
+def test_stored_ticket_is_passed_to_sync_without_int_cast(db):
+    class BrokerWithSync(PaperBroker):
+        def __init__(self):
+            super().__init__(GOLD, 10_000)
+            self.expected_tickets = []
+
+        def sync(self, expected_ticket=None):
+            self.expected_tickets.append(expected_ticket)
+
+    b = BrokerWithSync()
+    db.set_state("open_ticket:mt5:test_schedule:XAUUSD", "123")
+    run(db, b, MON)
+    assert b.expected_tickets == ["123"]
 
 
 def test_clearing_mt5_position_removes_new_and_legacy_ticket_keys(db):

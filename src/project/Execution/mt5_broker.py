@@ -111,8 +111,15 @@ class MT5Broker:
             raise BrokerError(f"positions_get ล้มเหลว: {self.mt5.last_error()}")
         return [p for p in res if p.magic == self.magic]
 
-    def sync(self, expected_ticket: int | None = None) -> str | None:
+    def sync(self, expected_ticket: int | str | None = None) -> str | None:
         """ดึงสถานะจริงจาก broker (ใช้ตอนเริ่ม / หลัง reconnect / หลังผิดพลาดแบบกำกวม)"""
+        if expected_ticket is not None:
+            try:
+                expected_ticket = int(expected_ticket)
+            except ValueError as exc:
+                raise BrokerError(
+                    f"invalid expected ticket {expected_ticket!r}"
+                ) from exc
         own = self._own_positions()
         if len(own) > 1:
             raise BrokerError(

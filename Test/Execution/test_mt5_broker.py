@@ -295,6 +295,20 @@ def test_sync_uses_persisted_expected_ticket_across_broker_processes():
     assert second.sync(expected_ticket=ticket) is None
 
 
+def test_sync_accepts_string_ticket_like_integer_ticket():
+    _, broker = make()
+    broker.open("long", 0.1, 0, 0, stop=1990.0, ts=TS)
+    ticket = broker._ticket
+    assert broker.sync(expected_ticket=str(ticket)) is None
+    assert broker.sync(expected_ticket=ticket) is None
+
+
+def test_sync_rejects_non_numeric_expected_ticket():
+    _, broker = make()
+    with pytest.raises(BrokerError, match="invalid expected ticket"):
+        broker.sync(expected_ticket="abc")
+
+
 def test_sync_reports_persisted_ticket_removed_before_new_process():
     fake, first = make()
     first.open("long", 0.1, 0, 0, stop=1990.0, ts=TS)

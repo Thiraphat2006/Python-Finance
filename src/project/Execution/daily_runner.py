@@ -251,7 +251,7 @@ def run_once(
 
     sync_note = None
     if hasattr(broker, "sync"):  # live broker: ดึงสถานะจริงก่อนตัดสินใจทุกครั้ง
-        expected_ticket = int(raw_ticket) if raw_ticket not in (None, "") else None
+        expected_ticket = raw_ticket if raw_ticket not in (None, "") else None
         sync_method = broker.sync
         if "expected_ticket" in inspect.signature(sync_method).parameters:
             sync_note = sync_method(expected_ticket=expected_ticket)
