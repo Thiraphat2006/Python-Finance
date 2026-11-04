@@ -1,15 +1,27 @@
 import logging
 import math
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 
+import httpx
 import pandas as pd
 
-from project.Execution.capital_client import CapitalClient
+from project.Execution.capital_client import (
+    CapitalApiError,
+    CapitalClient,
+    CapitalClientError,
+)
 from project.Execution.capital_symbols import CAPITAL_GOLD_SPEC, EPIC
 from project.Execution.interfaces import BrokerError
 from project.Execution.paper_broker import Position
 from project.Risk.position_sizing import SymbolSpec
+
+_OPEN_ATTEMPTS = 3
+_OPEN_RETRY_SECONDS = 1.0
+_STOP_DECIMALS = 2  # UNVERIFIED: price precision for GOLD on Capital.com
 
 
 class CapitalBrokerError(BrokerError):
@@ -39,6 +51,7 @@ class CapitalBroker:
         client: CapitalClient,
         epic: str = EPIC,
         spec: SymbolSpec = CAPITAL_GOLD_SPEC,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self.client = client
         self.epic = epic
@@ -46,6 +59,7 @@ class CapitalBroker:
         self.position: Position | None = None
         self._ticket: str | None = None
         self._log = logging.getLogger("autotrader")
+        self._sleep = sleep
         self.sync()
 
     def fetch_positions(self) -> list[CapitalPosition]:
@@ -178,6 +192,133 @@ class CapitalBroker:
             entry_time,
         )
 
+    def open(
+        self,
+        side: str,
+        lots: float,
+        price: float,
+        half_spread: float,
+        stop: float,
+        ts: pd.Timestamp,
+    ) -> None:
+        """Open one position with its stop attached; POST /positions is sent at most once.
+
+        Response formats of POST /positions and GET /confirms are UNVERIFIED
+        (documentation only, never probed).
+        """
+        if side not in ("long", "short"):
+            raise CapitalBrokerError(f"invalid side {side!r}")
+        size = self._order_size(lots)
+        stop_level = self._order_stop(side, price, stop)
+        if self.fetch_positions():
+            raise CapitalBrokerError(f"มีสถานะ {self.epic} อยู่แล้ว ไม่เปิดซ้ำ")
+
+        direction = "BUY" if side == "long" else "SELL"
+        body = {
+            "epic": self.epic,
+            "direction": direction,
+            "size": size,
+            "stopLevel": stop_level,
+        }
+        try:
+            payload = self.client.post("/positions", json=body)
+        except httpx.TransportError as exc:
+            self._recover_open(side, size, f"POST /positions {type(exc).__name__}")
+            return
+        except CapitalApiError as exc:
+            if exc.status_code < 500:
+                raise
+            self._recover_open(side, size, f"POST /positions status {exc.status_code}")
+            return
+
+        reference = payload.get("dealReference")
+        if not isinstance(reference, str) or not reference:
+            self._recover_open(side, size, "POST /positions has no dealReference")
+            return
+        confirmed = self._confirm_deal(reference)
+        if confirmed is None:
+            self._recover_open(side, size, f"confirms {reference} unavailable")
+            return
+        level, deal_id = confirmed
+        self._ticket = deal_id
+        self.position = Position(side, size, level, stop_level, ts)
+
+    def _order_size(self, lots: float) -> float:
+        spec = self.spec
+        if (
+            not math.isfinite(lots)
+            or lots < spec.volume_min - 1e-9
+            or lots > spec.volume_max
+        ):
+            raise CapitalBrokerError(f"invalid order size {lots!r}")
+        steps = lots / spec.volume_step
+        if abs(steps - round(steps)) > 1e-6:
+            raise CapitalBrokerError(f"order size {lots!r} is not a multiple of step")
+        return round(round(steps) * spec.volume_step, 8)
+
+    def _order_stop(self, side: str, price: float, stop: float) -> float:
+        value = _number(stop)
+        if value is None or value <= 0:
+            raise CapitalBrokerError(f"invalid stop {stop!r}")
+        level = round(value, _STOP_DECIMALS)
+        if (side == "long" and level >= price) or (side == "short" and level <= price):
+            raise CapitalBrokerError(f"stop {level} is on the wrong side of {price}")
+        return level
+
+    def _confirm_deal(self, reference: str) -> tuple[float, str] | None:
+        path = f"/confirms/{quote(reference, safe='')}"
+        for attempt in range(_OPEN_ATTEMPTS):
+            if attempt:
+                self._sleep(_OPEN_RETRY_SECONDS)
+            try:
+                payload = self.client.get(path)
+            except (httpx.TransportError, CapitalClientError):
+                continue
+            status = payload.get("dealStatus")
+            if status == "REJECTED":
+                raise CapitalBrokerError(
+                    f"Capital.com rejected the order: {payload.get('reason')!r}"
+                )
+            if status != "ACCEPTED":
+                continue
+            level = _number(payload.get("level"))
+            deal_id = _first_deal_id(payload)
+            if level is None or deal_id is None:
+                return None
+            return level, deal_id
+        return None
+
+    def _recover_open(self, side: str, size: float, why: str) -> None:
+        """Order outcome unknown: look at /positions, never resend the order."""
+        direction = "BUY" if side == "long" else "SELL"
+        for attempt in range(_OPEN_ATTEMPTS):
+            if attempt:
+                self._sleep(_OPEN_RETRY_SECONDS)
+            try:
+                positions = self.fetch_positions()
+            except (httpx.TransportError, CapitalClientError):
+                continue
+            if not positions:
+                continue
+            if len(positions) > 1:
+                raise CapitalBrokerError(
+                    f"ambiguous: พบ {len(positions)} สถานะหลังส่งออเดอร์ ({why})"
+                )
+            found = positions[0]
+            if found.direction != direction or abs(found.size - size) > 1e-9:
+                raise CapitalBrokerError(
+                    f"ambiguous: สถานะที่พบ {found.ticket} ไม่ตรงกับที่สั่ง ({why})"
+                )
+            self._ticket = found.ticket
+            self.position = Position(
+                side, found.size, found.open_price, found.sl, found.entry_time
+            )
+            self._log.warning("ยืนยันการเปิดสถานะจาก /positions แทน confirms (%s)", why)
+            return
+        raise CapitalBrokerError(
+            f"ambiguous: ไม่ทราบผลออเดอร์ ไม่ส่งซ้ำ ให้ sync รอบหน้าตรวจ ({why})"
+        )
+
 
 def _number(value: Any) -> float | None:
     try:
@@ -205,3 +346,12 @@ def _parse_entry_time(value: Any) -> pd.Timestamp:
     if timestamp.tzinfo is not None:
         timestamp = timestamp.tz_convert("UTC").tz_localize(None)
     return timestamp
+
+
+def _first_deal_id(payload: dict[str, Any]) -> str | None:
+    deals = payload.get("affectedDeals")
+    if isinstance(deals, list) and deals and isinstance(deals[0], dict):
+        deal_id = deals[0].get("dealId")
+        if deal_id not in (None, ""):
+            return str(deal_id)
+    return None
