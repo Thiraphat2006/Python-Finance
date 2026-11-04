@@ -1,3 +1,4 @@
+import math
 from types import SimpleNamespace
 
 import pandas as pd
@@ -76,6 +77,10 @@ def test_position_risk_long_short_and_locked_profit():
     assert position_risk_money(pos("long", 0.1, 2000, 2010), GOLD) == 0.0
 
 
+def test_position_without_stop_has_unlimited_risk():
+    assert position_risk_money(pos("long", 0.1, 2000, None), GOLD) == math.inf
+
+
 def test_open_risk_fraction_sums_positions():
     items = [
         (pos("long", 0.1, 2000, 1990), GOLD),
@@ -85,6 +90,17 @@ def test_open_risk_fraction_sums_positions():
     assert open_risk_fraction(items, 10_000) == pytest.approx(0.02)
     assert open_risk_fraction([], 10_000) == 0.0
     assert open_risk_fraction(items, 0) == 0.0
+
+
+def test_open_risk_without_stop_blocks_new_entry():
+    items = [(pos("long", 0.1, 2000, None), GOLD)]
+    assert open_risk_fraction(items, 10_000) == math.inf
+    engine = RiskEngine(RiskConfig(max_total_risk=0.02), 10_000)
+    assert not engine.check_entry(
+        10_000,
+        1,
+        open_risk=open_risk_fraction(items, 10_000),
+    ).allowed
 
 
 # ---------- บันทึก/โหลดสถานะข้ามการรัน ----------

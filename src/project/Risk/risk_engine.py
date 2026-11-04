@@ -13,6 +13,7 @@ daily limit / kill switch เป็นระดับบัญชีเสมอ
 (ไม่เช่นนั้น peak equity และ kill switch จะหายทุกเช้า)
 """
 
+import math
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from datetime import date
@@ -39,11 +40,13 @@ class Decision:
 
 
 def position_risk_money(pos: Any, spec: Any) -> float:
-    """เงินที่จะเสียถ้าสถานะนี้โดน stop (0 ถ้า stop ถูกเลื่อนไปอยู่ฝั่งกำไรแล้ว)
+    """เงินที่จะเสียถ้าสถานะนี้โดน stop (inf ถ้าไม่มี stop ที่ยืนยันได้)
 
     pos ต้องมี side/lots/entry/stop (Position จาก paper_broker หรือ mt5_broker)
     spec ต้องมี contract_size (SymbolSpec)
     """
+    if pos.stop is None:
+        return math.inf
     if pos.side == "long":
         distance = pos.entry - pos.stop
     else:

@@ -17,13 +17,9 @@ from typing import Any
 
 import pandas as pd
 
+from project.Execution.interfaces import BrokerError
 from project.Execution.paper_broker import Position, Trade
 from project.Risk.position_sizing import SymbolSpec
-
-
-class BrokerError(RuntimeError):
-    pass
-
 
 # retcode ที่ retry ได้อย่างปลอดภัย (ออเดอร์ยังไม่ถูกเติมแน่นอน)
 _RETRYABLE = {10004, 10020, 10021}  # REQUOTE, PRICE_CHANGED, PRICE_OFF

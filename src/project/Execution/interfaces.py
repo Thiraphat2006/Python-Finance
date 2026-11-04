@@ -5,6 +5,10 @@ import pandas as pd
 from project.Execution.paper_broker import Trade
 
 
+class BrokerError(RuntimeError):
+    """Base error for broker state or operations that cannot be used safely."""
+
+
 class Broker(Protocol):
     @property
     def cash(self) -> float: ...
