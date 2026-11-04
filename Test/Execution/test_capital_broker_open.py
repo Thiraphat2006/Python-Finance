@@ -48,6 +48,7 @@ class Fake:
         self.on_post = lambda request: httpx.Response(
             200, json={"dealReference": "o_1"}
         )
+        self.on_delete = self._default_delete
 
     def __call__(self, request):
         path = request.url.path.removeprefix("/api/v1")
@@ -63,6 +64,8 @@ class Fake:
             return self.on_post(request)
         if request.method == "GET" and path.startswith("/confirms/"):
             return self.confirms.pop(0)() if self.confirms else not_found()
+        if request.method == "DELETE" and path.startswith("/positions/"):
+            return self.on_delete(request)
         return httpx.Response(500)
 
     def count(self, method, path):
@@ -74,6 +77,10 @@ class Fake:
             return make_response(request)
 
         self.on_post = on_post
+
+    def _default_delete(self, request):
+        self.positions.clear()
+        return httpx.Response(200, json={"dealReference": "p_deal-1"})
 
 
 def timeout(request):
@@ -235,3 +242,128 @@ def test_recovery_with_mismatched_position_raises_ambiguous():
     with pytest.raises(CapitalBrokerError, match="ambiguous"):
         b.open("long", 0.01, 3936.0, 0.25, 3900.0, TS)
     assert b.position is None
+
+
+def close_ok(profit=0.005, level=3937.0):
+    body = {
+        "status": "CLOSED",
+        "dealStatus": "ACCEPTED",
+        "dealReference": "p_deal-1",
+        "dealId": "deal-1",
+        "affectedDeals": [{"dealId": "deal-1", "status": "FULLY_CLOSED"}],
+        "level": level,
+        "size": 0.01,
+        "direction": "SELL",
+        "profitCurrency": "USD",
+    }
+    if profit is not None:
+        body["profit"] = profit
+    return lambda: httpx.Response(200, json=body)
+
+
+def held():
+    fake = Fake()
+    fake.positions = [raw_position()]
+    return fake, make(fake)
+
+
+def test_close_returns_trade_from_confirm():
+    fake, b = held()
+    fake.confirms = [close_ok()]
+    trade = b.close(3936.8, 0.25, TS, "schedule")
+    assert (trade.side, trade.lots, trade.entry) == ("long", 0.01, 3936.5)
+    assert trade.exit == 3937.0
+    assert trade.pnl == 0.005
+    assert trade.exit_time == TS
+    assert trade.entry_time == pd.Timestamp(CREATED)
+    assert trade.reason == "schedule"
+    assert b.position is None and b._ticket is None
+    assert b.trades == [trade]
+    assert fake.count("DELETE", "/positions/deal-1") == 1
+
+
+def test_close_without_position_raises():
+    b = make(Fake())
+    with pytest.raises(RuntimeError, match="ไม่มีสถานะ"):
+        b.close(3936.8, 0.25, TS, "schedule")
+
+
+def test_close_when_position_gone_does_not_delete():
+    fake, b = held()
+    fake.positions = []
+    with pytest.raises(CapitalBrokerError, match="ไม่อยู่ที่ broker"):
+        b.close(3936.8, 0.25, TS, "schedule")
+    assert fake.count("DELETE", "/positions/deal-1") == 0
+    assert b.position is not None
+
+
+def test_close_delete_timeout_is_ambiguous_without_resend():
+    fake, b = held()
+    fake.on_delete = timeout
+    with pytest.raises(CapitalBrokerError, match="ambiguous"):
+        b.close(3936.8, 0.25, TS, "schedule")
+    assert fake.count("DELETE", "/positions/deal-1") == 1
+    assert b.position is not None
+
+
+def test_close_delete_500_is_ambiguous():
+    fake, b = held()
+    fake.on_delete = lambda request: httpx.Response(500, json={"errorCode": "boom"})
+    with pytest.raises(CapitalBrokerError, match="ambiguous"):
+        b.close(3936.8, 0.25, TS, "schedule")
+    assert fake.count("DELETE", "/positions/deal-1") == 1
+    assert b.position is not None
+
+
+def test_close_delete_400_raises_api_error_and_keeps_position():
+    fake, b = held()
+    fake.on_delete = lambda request: httpx.Response(
+        400, json={"errorCode": "error.invalid"}
+    )
+    with pytest.raises(CapitalApiError):
+        b.close(3936.8, 0.25, TS, "schedule")
+    assert b.position is not None
+
+
+def test_close_rejected_keeps_position():
+    fake, b = held()
+    fake.confirms = [
+        lambda: httpx.Response(
+            200, json={"dealStatus": "REJECTED", "reason": "MARKET_CLOSED"}
+        )
+    ]
+    with pytest.raises(CapitalBrokerError, match="rejected"):
+        b.close(3936.8, 0.25, TS, "schedule")
+    assert b.position is not None
+
+
+def test_close_confirm_unavailable_is_ambiguous():
+    fake, b = held()
+    fake.confirms = []
+    with pytest.raises(CapitalBrokerError, match="ambiguous"):
+        b.close(3936.8, 0.25, TS, "schedule")
+    assert fake.count("DELETE", "/positions/deal-1") == 1
+    assert b.position is not None
+
+
+def test_close_without_profit_computes_gross_pnl():
+    fake, b = held()
+    fake.confirms = [close_ok(profit=None)]
+    trade = b.close(3936.8, 0.25, TS, "schedule")
+    assert trade.pnl == pytest.approx(0.005)
+
+
+def test_check_stop_none_without_position():
+    assert make(Fake()).check_stop() is None
+
+
+def test_check_stop_none_while_position_is_at_broker():
+    _, b = held()
+    assert b.check_stop() is None
+
+
+def test_check_stop_raises_when_position_vanished():
+    fake, b = held()
+    fake.positions = []
+    with pytest.raises(CapitalBrokerError, match="ไม่อยู่ที่ broker"):
+        b.check_stop()

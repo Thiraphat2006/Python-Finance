@@ -163,16 +163,17 @@ def test_account_values_ignore_account_type() -> None:
                 {
                     "accountType": "CFD",
                     "balance": {
-                        "available": 900.0,
-                        "balance": 1000.0,
-                        "profitLoss": -25.0,
+                        "available": 959.32,
+                        "balance": 999.74,
+                        "deposit": 1000.25,
+                        "profitLoss": -0.51,
                     },
                 }
             ],
         }
     )
-    assert b.cash == 1000.0
-    assert b.equity() == 975.0
+    assert b.cash == 1000.25
+    assert b.equity() == 999.74
 
 
 @pytest.mark.parametrize(
