@@ -15,7 +15,7 @@ class Position:
     side: str  # "long" | "short"
     lots: float
     entry: float
-    stop: float
+    stop: float | None
     entry_time: pd.Timestamp
 
 
@@ -92,6 +92,8 @@ class PaperBroker:
         """ถ้าแท่งนี้แตะ stop -> ปิดที่ stop (ถ้าเปิดแท่งกระโดดข้าม stop ปิดที่ open ซึ่งแย่กว่า)"""
         p = self.position
         if p is None:
+            return None
+        if p.stop is None:
             return None
         if p.side == "long" and l <= p.stop:
             return self.close(min(p.stop, o), half_spread, ts, "stop")

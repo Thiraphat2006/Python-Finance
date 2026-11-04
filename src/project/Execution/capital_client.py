@@ -128,6 +128,8 @@ class CapitalClient:
         return self.request("DELETE", path, params=params)
 
     def close(self) -> None:
+        # Token expires after 10 minutes; POST /session is limited to 1/sec.
+        # Revisit session lifecycle with the next Capital integration step.
         self._client.close()
 
     def __enter__(self) -> Self:

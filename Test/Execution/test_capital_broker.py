@@ -1,9 +1,14 @@
 import logging
 
 import httpx
+import pandas as pd
 import pytest
 
-from project.Execution.capital_broker import CapitalBroker, CapitalPosition
+from project.Execution.capital_broker import (
+    CapitalBroker,
+    CapitalBrokerError,
+    CapitalPosition,
+)
 from project.Execution.capital_client import CapitalClient
 
 
@@ -40,7 +45,7 @@ def raw_position(
         "direction": direction,
         "level": 3936.94,
         "upl": 0.23,
-        "createdDateUTC": "2026-11-03T10:00:00.000",
+        "createdDateUTC": "2026-11-03T00:30:12.345",
     }
     values.update(position)
     return {"position": values, "market": {"epic": epic}}
@@ -51,12 +56,15 @@ def broker(payload: dict) -> CapitalBroker:
 
 
 def test_open_positions_empty_list() -> None:
-    assert broker({"positions": []}).open_positions() == []
+    b = broker({"positions": []})
+    assert b.fetch_positions() == []
+    assert b.open_positions == 0
 
 
 def test_open_positions_parses_buy_without_stop_level() -> None:
-    positions = broker({"positions": [raw_position()]}).open_positions()
-    assert positions == [CapitalPosition("ticket-1", "BUY", 1.0, 3936.94, None, 0.23)]
+    positions = broker({"positions": [raw_position()]}).fetch_positions()
+    assert positions[0].sl is None
+    assert positions[0].entry_time == pd.Timestamp("2026-11-03T00:30:12.345")
 
 
 def test_open_positions_parses_stop_sell_and_filters_other_epic() -> None:
@@ -67,14 +75,24 @@ def test_open_positions_parses_stop_sell_and_filters_other_epic() -> None:
                 raw_position(ticket="other-1", epic="SILVER"),
             ]
         }
-    ).open_positions()
-    assert positions == [CapitalPosition("sell-1", "SELL", 1.0, 3936.94, 3945.0, 0.23)]
+    ).fetch_positions()
+    assert positions == [
+        CapitalPosition(
+            "sell-1",
+            "SELL",
+            1.0,
+            3936.94,
+            3945.0,
+            0.23,
+            pd.Timestamp("2026-11-03T00:30:12.345"),
+        )
+    ]
 
 
 def test_open_positions_keeps_ticket_as_string_and_missing_upl_as_none() -> None:
     positions = broker(
         {"positions": [raw_position(ticket=123, upl=None)]}
-    ).open_positions()
+    ).fetch_positions()
     assert positions[0].ticket == "123"
     assert positions[0].pnl is None
 
@@ -85,7 +103,7 @@ def test_malformed_entry_is_skipped_with_warning(
     with caplog.at_level(logging.WARNING, logger="autotrader"):
         positions = broker(
             {"positions": [{"position": {}, "market": {"epic": "GOLD"}}]}
-        ).open_positions()
+        ).fetch_positions()
     assert positions == []
     assert "Skipping malformed Capital.com position" in caplog.text
 
@@ -96,6 +114,7 @@ def test_sync_matching_position_returns_none() -> None:
     assert b._ticket == "ticket-1"
     assert b.position is not None
     assert b.position.side == "long"
+    assert b.position.stop is None
 
 
 def test_sync_reports_missing_position() -> None:
@@ -119,3 +138,48 @@ def test_sync_reports_unexpected_and_changed_ticket() -> None:
 def test_sync_rejects_multiple_positions() -> None:
     with pytest.raises(RuntimeError, match="รองรับ 1"):
         broker({"positions": [raw_position(), raw_position(ticket="ticket-2")]})
+
+
+def test_missing_created_date_raises() -> None:
+    with pytest.raises(CapitalBrokerError, match="createdDateUTC"):
+        broker({"positions": [raw_position(createdDateUTC=None)]})
+
+
+def test_malformed_created_date_raises() -> None:
+    with pytest.raises(CapitalBrokerError, match="createdDateUTC"):
+        broker({"positions": [raw_position(createdDateUTC="not-a-date")]})
+
+
+def test_non_string_created_date_raises() -> None:
+    with pytest.raises(CapitalBrokerError, match="createdDateUTC"):
+        broker({"positions": [raw_position(createdDateUTC=1762129812345)]})
+
+
+def test_account_values_ignore_account_type() -> None:
+    b = broker(
+        {
+            "positions": [],
+            "accounts": [
+                {
+                    "accountType": "CFD",
+                    "balance": {
+                        "available": 900.0,
+                        "balance": 1000.0,
+                        "profitLoss": -25.0,
+                    },
+                }
+            ],
+        }
+    )
+    assert b.cash == 1000.0
+    assert b.equity() == 975.0
+
+
+@pytest.mark.parametrize(
+    "accounts",
+    [None, [], [{}], [{"balance": {"available": 1.0, "balance": 2.0}}]],
+)
+def test_unexpected_account_shape_raises(accounts: object) -> None:
+    b = broker({"positions": [], "accounts": accounts})
+    with pytest.raises(CapitalBrokerError, match="accounts|balance"):
+        _ = b.cash
