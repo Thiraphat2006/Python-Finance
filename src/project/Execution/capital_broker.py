@@ -16,7 +16,7 @@ from project.Execution.capital_client import (
 )
 from project.Execution.capital_symbols import CAPITAL_GOLD_SPEC, EPIC
 from project.Execution.interfaces import BrokerError
-from project.Execution.paper_broker import Position
+from project.Execution.paper_broker import Position, Trade
 from project.Risk.position_sizing import SymbolSpec
 
 _OPEN_ATTEMPTS = 3
@@ -40,10 +40,11 @@ class CapitalPosition:
 
 
 class CapitalBroker:
-    """Read-only Capital.com broker adapter; not wired into the broker factory.
+    """Capital.com broker adapter; not wired into the broker factory.
 
-    Cash/equity semantics are UNVERIFIED assumptions and must be measured with
-    an open position in step (3c).
+    Account semantics verified on demo 2026-11-04: cash = balance.deposit
+    (realized), equity = balance.balance (already includes floating P/L).
+    Whether confirm.profit includes swap is UNVERIFIED (needs an overnight hold).
     """
 
     def __init__(
@@ -57,6 +58,7 @@ class CapitalBroker:
         self.epic = epic
         self.spec = spec
         self.position: Position | None = None
+        self.trades: list[Trade] = []
         self._ticket: str | None = None
         self._log = logging.getLogger("autotrader")
         self._sleep = sleep
@@ -84,14 +86,14 @@ class CapitalBroker:
 
     @property
     def cash(self) -> float:
-        """Return account balance; whether it includes unrealized P/L is UNVERIFIED."""
-        balance, _ = self._account_values()
-        return balance
+        """Realized balance (`deposit`, excludes floating P/L)."""
+        deposit, _ = self._account_values()
+        return deposit
 
     def equity(self, price: float = 0.0) -> float:
-        """Return balance plus profit/loss; whether balance includes unrealized P/L is UNVERIFIED."""
-        balance, profit_loss = self._account_values()
-        return balance + profit_loss
+        """Account `balance`, which already includes floating P/L (do not add profitLoss)."""
+        _, balance = self._account_values()
+        return balance
 
     def sync(self, expected_ticket: str | None = None) -> str | None:
         positions = self.fetch_positions()
@@ -148,13 +150,13 @@ class CapitalBroker:
             raise CapitalBrokerError(
                 "Capital.com account balance has an unexpected shape"
             )
+        deposit = _number(balance.get("deposit"))
         total = _number(balance.get("balance"))
-        profit_loss = _number(balance.get("profitLoss"))
-        if total is None or profit_loss is None:
+        if deposit is None or total is None:
             raise CapitalBrokerError(
                 "Capital.com account balance has an unexpected shape"
             )
-        return total, profit_loss
+        return deposit, total
 
     def _parse_position(self, raw: Any) -> CapitalPosition | None:
         if not isinstance(raw, dict):
@@ -243,6 +245,91 @@ class CapitalBroker:
         self._ticket = deal_id
         self.position = Position(side, size, level, stop_level, ts)
 
+    def close(
+        self, price: float, half_spread: float, ts: pd.Timestamp, reason: str
+    ) -> Trade:
+        """Close the open position; DELETE /positions/{dealId} is sent at most once.
+
+        pnl is confirm.profit (gross); whether it includes swap is UNVERIFIED.
+        """
+        position, ticket = self.position, self._ticket
+        if position is None or ticket is None:
+            raise RuntimeError("ไม่มีสถานะให้ปิด")
+        if all(p.ticket != ticket for p in self.fetch_positions()):
+            raise CapitalBrokerError(
+                f"สถานะ ticket {ticket} ไม่อยู่ที่ broker แล้ว (โดน SL/ปิดนอกโปรแกรม) "
+                "ให้ sync รอบหน้าตรวจ"
+            )
+        try:
+            payload = self.client.delete(f"/positions/{quote(ticket, safe='')}")
+        except httpx.TransportError as exc:
+            raise CapitalBrokerError(
+                f"ambiguous: ไม่ทราบผลคำสั่งปิด ({type(exc).__name__}) "
+                "ไม่ส่งซ้ำ ให้ sync รอบหน้าตรวจ"
+            ) from exc
+        except CapitalApiError as exc:
+            if exc.status_code < 500:
+                raise
+            raise CapitalBrokerError(
+                f"ambiguous: ไม่ทราบผลคำสั่งปิด (status {exc.status_code}) "
+                "ไม่ส่งซ้ำ ให้ sync รอบหน้าตรวจ"
+            ) from exc
+
+        reference = payload.get("dealReference")
+        confirm = (
+            self._fetch_confirm(reference)
+            if isinstance(reference, str) and reference
+            else None
+        )
+        exit_price = _number(confirm.get("level")) if confirm is not None else None
+        if confirm is None or exit_price is None:
+            raise CapitalBrokerError(
+                "ambiguous: สั่งปิดแล้วแต่ยืนยันผลไม่ได้ ไม่ส่งซ้ำ ให้ sync รอบหน้าตรวจ"
+            )
+        pnl = _number(confirm.get("profit"))
+        if pnl is None:
+            sign = 1 if position.side == "long" else -1
+            pnl = (
+                sign
+                * (exit_price - position.entry)
+                * position.lots
+                * self.spec.contract_size
+            )
+            self._log.warning("confirm ไม่มี profit คำนวณ gross pnl เอง: %.4f", pnl)
+        trade = Trade(
+            position.side,
+            position.lots,
+            position.entry,
+            exit_price,
+            position.entry_time,
+            ts,
+            pnl,
+            reason,
+        )
+        self.trades.append(trade)
+        self.position, self._ticket = None, None
+        return trade
+
+    def check_stop(
+        self,
+        o: float = 0.0,
+        h: float = 0.0,
+        l: float = 0.0,
+        half_spread: float = 0.0,
+        ts: pd.Timestamp | None = None,
+    ) -> Trade | None:
+        """None while the position is at the broker; raises if it vanished.
+
+        How a stop-out appears in history is UNVERIFIED, so no Trade is built.
+        """
+        if self.position is None or self._ticket is None:
+            return None
+        if any(p.ticket == self._ticket for p in self.fetch_positions()):
+            return None
+        raise CapitalBrokerError(
+            f"สถานะ ticket {self._ticket} ไม่อยู่ที่ broker แล้ว (โดน SL/ปิดนอกโปรแกรม)"
+        )
+
     def _order_size(self, lots: float) -> float:
         spec = self.spec
         if (
@@ -266,6 +353,16 @@ class CapitalBroker:
         return level
 
     def _confirm_deal(self, reference: str) -> tuple[float, str] | None:
+        payload = self._fetch_confirm(reference)
+        if payload is None:
+            return None
+        level = _number(payload.get("level"))
+        deal_id = _first_deal_id(payload)
+        if level is None or deal_id is None:
+            return None
+        return level, deal_id
+
+    def _fetch_confirm(self, reference: str) -> dict[str, Any] | None:
         path = f"/confirms/{quote(reference, safe='')}"
         for attempt in range(_OPEN_ATTEMPTS):
             if attempt:
@@ -279,13 +376,8 @@ class CapitalBroker:
                 raise CapitalBrokerError(
                     f"Capital.com rejected the order: {payload.get('reason')!r}"
                 )
-            if status != "ACCEPTED":
-                continue
-            level = _number(payload.get("level"))
-            deal_id = _first_deal_id(payload)
-            if level is None or deal_id is None:
-                return None
-            return level, deal_id
+            if status == "ACCEPTED":
+                return payload
         return None
 
     def _recover_open(self, side: str, size: float, why: str) -> None:
