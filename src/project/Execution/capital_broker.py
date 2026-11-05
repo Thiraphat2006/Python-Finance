@@ -40,7 +40,7 @@ class CapitalPosition:
 
 
 class CapitalBroker:
-    """Capital.com broker adapter; not wired into the broker factory.
+    """Capital.com broker adapter (used via CapitalSession).
 
     Account semantics verified on demo 2026-11-04: cash = balance.deposit
     (realized), equity = balance.balance (already includes floating P/L).
@@ -205,8 +205,7 @@ class CapitalBroker:
     ) -> None:
         """Open one position with its stop attached; POST /positions is sent at most once.
 
-        Response formats of POST /positions and GET /confirms are UNVERIFIED
-        (documentation only, never probed).
+        Response formats of POST /positions and GET /confirms verified on demo 2026-11-04 (see CAPITAL_API.md).
         """
         if side not in ("long", "short"):
             raise CapitalBrokerError(f"invalid side {side!r}")

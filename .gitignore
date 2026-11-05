@@ -27,3 +27,5 @@ logs/
 htmlcov/
 diff.txt
 handoff.md
+
+src/Python_Finance.egg-info

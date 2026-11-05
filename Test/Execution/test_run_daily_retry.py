@@ -15,6 +15,8 @@ from project.Risk.position_sizing import SymbolSpec
 
 def test_run_daily_help_and_non_mt5_broker_do_not_import_mt5(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "MetaTrader5", None)
+    for name in ("CAP_API_KEY", "CAP_IDENTIFIER", "CAP_API_PASSWORD"):
+        monkeypatch.delenv(name, raising=False)
     original_module_state = run_daily.__dict__.copy()
     try:
         module = importlib.reload(run_daily)
@@ -472,7 +474,7 @@ def test_run_trading_sync_note_and_error_alerts(monkeypatch, tmp_path):
     ]
 
 
-@pytest.mark.parametrize("broker", ["capital", "paper"])
+@pytest.mark.parametrize("broker", ["paper"])
 def test_run_trading_unimplemented_broker_does_not_touch_mt5(
     monkeypatch, tmp_path, broker
 ):
@@ -529,3 +531,79 @@ def test_run_trading_component_import_failure_alerts(monkeypatch, tmp_path):
 
     assert result == run_daily.TradingResult(1, None)
     assert alerts == [("XAUUSD", "error", "ลูปล้มเหลว ImportError")]
+
+
+def test_run_trading_capital_uses_capital_session(monkeypatch, tmp_path):
+    from project.Execution import capital_session
+
+    sessions = []
+
+    class FakeCapitalSession:
+        def __init__(self, symbol):
+            self.spec = SymbolSpec(
+                "GOLD",
+                point=0.01,
+                contract_size=1.0,
+                volume_min=0.01,
+                volume_step=0.01,
+                volume_max=50.0,
+            )
+            self.broker = object()
+            self.data = DailyFakeData()
+            self.close_calls = 0
+            sessions.append(self)
+
+        def connect(self):
+            pass
+
+        def close(self):
+            self.close_calls += 1
+
+    monkeypatch.setattr(capital_session, "CapitalSession", FakeCapitalSession)
+    monkeypatch.setattr(
+        run_daily, "setup_logging", lambda path: logging.getLogger("test")
+    )
+    monkeypatch.setattr(run_daily, "_alert", lambda *args: None)
+    seen = {}
+    monkeypatch.setattr(
+        run_daily,
+        "run_once",
+        lambda **kw: (
+            seen.update(kw)
+            or SimpleNamespace(
+                status="done", decision="hold", reason="ok", sync_note=None
+            )
+        ),
+    )
+    args = daily_args(tmp_path)
+    args.broker = "capital"
+
+    assert run_daily._run_trading(args) == run_daily.TradingResult(0, None)
+    assert seen["broker_name"] == "capital"
+    assert sessions[0].close_calls == 1
+
+
+def test_run_trading_capital_init_error_is_retryable(monkeypatch, tmp_path):
+    from project.Execution import capital_session
+
+    class Failing:
+        def __init__(self, symbol):
+            pass
+
+        def connect(self):
+            raise capital_session.CapitalInitError("ConnectError")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(capital_session, "CapitalSession", Failing)
+    monkeypatch.setattr(
+        run_daily, "setup_logging", lambda path: logging.getLogger("test")
+    )
+    alerts = []
+    monkeypatch.setattr(run_daily, "_alert", lambda *args: alerts.append(args))
+    args = daily_args(tmp_path)
+    args.broker = "capital"
+
+    assert run_daily._run_trading(args) == run_daily.TradingResult(1, "init_failed")
+    assert alerts == [("XAUUSD", "error", "initialize ไม่สำเร็จ")]
