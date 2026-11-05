@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from project.strategy.tsmom import (
+from project.Strategy.tsmom import (
     TsmomConfig,
     evaluate_pass,
     metrics,

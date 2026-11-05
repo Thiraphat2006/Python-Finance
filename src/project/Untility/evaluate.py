@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 from project.Indicator.moving_avg import MovingAvg
-from project.strategy.moving_avg_logic import MovingAvgLogic, StrategyConfig
+from project.Strategy.moving_avg_logic import MovingAvgLogic, StrategyConfig
 from project.Untility.back_testing import back_test, sharpe
 
 MIN_TRAIN_TRADES = 30  # น้อยกว่านี้ Sharpe ไม่มีความหมาย

@@ -20,7 +20,7 @@ edge ที่มีหลักฐานมาจากการกระจา
 lookback 126/189 ใช้ดูความเสถียรเท่านั้น ห้ามเลือกตัวที่ดีที่สุด
 
 Usage:
-    from project.strategy.tsmom import run_tsmom, evaluate_pass
+    from project.Strategy.tsmom import run_tsmom, evaluate_pass
     res = run_tsmom(data, points)          # data = {symbol: DataFrame D1}, points = {symbol: point}
     print(evaluate_pass(data, points))
 """

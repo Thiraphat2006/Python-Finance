@@ -5,7 +5,6 @@ src/Python_Finance.egg-info/SOURCES.txt
 src/Python_Finance.egg-info/dependency_links.txt
 src/Python_Finance.egg-info/top_level.txt
 src/project/__init__.py
-src/project/Entity/__init__.py
 src/project/Entity/moving_avg_entity.py
 src/project/Indicator/Moving_Avg.py
 src/project/Indicator/__init__.py
