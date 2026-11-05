@@ -2,7 +2,7 @@ import pandas as pd
 import vectorbt as vbt
 
 from project.Indicator.moving_avg import MovingAvg
-from project.strategy.moving_avg_logic import MovingAvgLogic, StrategyConfig
+from project.Strategy.moving_avg_logic import MovingAvgLogic, StrategyConfig
 
 
 def back_test(
