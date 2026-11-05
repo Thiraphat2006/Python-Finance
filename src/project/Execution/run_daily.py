@@ -15,7 +15,7 @@ import sys
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import pandas as pd
 
@@ -85,16 +85,35 @@ def _run_trading(
     args: argparse.Namespace, *, quiet_retryable: bool = False
 ) -> TradingResult:
     log = setup_logging(args.log_dir)
-    if args.broker != "mt5":
+
+    if args.broker == "paper":
         log.error("broker not implemented yet: %s", args.broker)
         _alert(args.symbol, "error", "broker not implemented yet")
         return TradingResult(1, None)
 
+    session: Any
+    init_error: type[Exception]
+    symbol_error: type[Exception]
     try:
-        _load_mt5_components()
-        if MT5Session is None or MT5InitError is None or SymbolNotFoundError is None:
-            raise RuntimeError("MT5 components failed to load")
-        session = MT5Session(args.symbol)
+        if args.broker == "capital":
+            from project.Execution.capital_session import (
+                CapitalInitError,
+                CapitalSession,
+                CapitalSymbolError,
+            )
+
+            session = CapitalSession(args.symbol)
+            init_error, symbol_error = CapitalInitError, CapitalSymbolError
+        else:
+            _load_mt5_components()
+            if (
+                MT5Session is None
+                or MT5InitError is None
+                or SymbolNotFoundError is None
+            ):
+                raise RuntimeError("MT5 components failed to load")
+            session = MT5Session(args.symbol)
+            init_error, symbol_error = MT5InitError, SymbolNotFoundError
     except Exception as exc:
         log.exception("ลูปรายวันล้มเหลว")
         _alert(args.symbol, "error", f"ลูปล้มเหลว {type(exc).__name__}")
@@ -102,14 +121,14 @@ def _run_trading(
 
     try:
         session.connect()
-    except MT5InitError as exc:
-        log.error("initialize ไม่สำเร็จ: %s", exc.last_error)
+    except init_error as exc:
+        log.error("initialize ไม่สำเร็จ: %s", getattr(exc, "last_error", exc))
         if quiet_retryable:
             log.warning("initialize ไม่สำเร็จ จะลองใหม่")
         else:
             _alert(args.symbol, "error", "initialize ไม่สำเร็จ")
         return TradingResult(1, "init_failed")
-    except SymbolNotFoundError:
+    except symbol_error:
         session.close()
         log.error("ไม่พบ symbol %s", args.symbol)
         _alert(args.symbol, "error", "ไม่พบ symbol")
