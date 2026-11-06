@@ -8,7 +8,7 @@ import pytest
 from project.Execution.capital_client import CapitalClient
 
 _PROBE_SPEC = spec_from_file_location(
-    "capital_probe", Path(__file__).parents[1] / "tools" / "capital_probe.py"
+    "capital_probe", Path(__file__).parents[2] / "tools" / "capital_probe.py"
 )
 assert _PROBE_SPEC is not None and _PROBE_SPEC.loader is not None
 capital_probe = module_from_spec(_PROBE_SPEC)

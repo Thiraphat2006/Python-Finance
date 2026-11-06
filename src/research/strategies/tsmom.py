@@ -31,7 +31,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from project.Untility.spread import fix_zero_spread
+from research.data.spread import fix_zero_spread
 
 # เกณฑ์ผ่าน (ล็อกไว้ล่วงหน้า)
 PASS_SHARPE = 0.4
