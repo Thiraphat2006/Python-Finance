@@ -5,6 +5,8 @@ from pathlib import Path
 import MetaTrader5 as mt5
 import pandas as pd
 
+from research.paths import DATA_CACHE_DIR
+
 logger = logging.getLogger(__name__)
 
 
@@ -20,7 +22,7 @@ class DataLoader:
         self,
         symbol: str,
         time_frame=mt5.TIMEFRAME_H4,
-        cache_dir: str | None = "data_cache",
+        cache_dir: str | Path | None = DATA_CACHE_DIR,
         terminal_path: str | None = None,
     ):
         # terminal_path เช่น r"C:\Program Files\MetaTrader 5\terminal64.exe"

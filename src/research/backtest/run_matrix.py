@@ -18,9 +18,10 @@ from pathlib import Path
 import MetaTrader5 as mt5
 import pandas as pd
 
-from project.Untility.data_loader import DataLoader
-from project.Untility.evaluate import walk_forward
-from project.Untility.spread import fix_zero_spread
+from research.backtest.evaluate import walk_forward
+from research.data.data_loader import DataLoader
+from research.data.spread import fix_zero_spread
+from research.paths import RESULTS_DIR
 
 TIMEFRAMES = {
     "H1": mt5.TIMEFRAME_H1,
@@ -117,7 +118,7 @@ def run_matrix(
     train_years: int = 2,
     test_years: int = 1,
     terminal_path: str | None = None,
-    out_dir: str = "results",
+    out_dir: str | Path = RESULTS_DIR,
     fix_spread: bool = True,
     extra_spread_points: float = 0.0,
 ):

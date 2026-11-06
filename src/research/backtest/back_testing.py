@@ -1,8 +1,8 @@
 import pandas as pd
 import vectorbt as vbt
 
-from project.Indicator.moving_avg import MovingAvg
-from project.Strategy.moving_avg_logic import MovingAvgLogic, StrategyConfig
+from research.indicators.moving_avg import MovingAvg
+from research.strategies.moving_avg_logic import MovingAvgLogic, StrategyConfig
 
 
 def back_test(
@@ -78,16 +78,16 @@ def run(raw: pd.DataFrame, config: StrategyConfig | None = None, **kwargs):
 if __name__ == "__main__":
     from datetime import datetime
 
-    from project.Untility.data_loader import DataLoader
+    from research.data.data_loader import DataLoader
 
     loader = DataLoader("XAUUSD")
     raw = loader.load_with_date(datetime(2020, 1, 1), datetime(2024, 1, 1))
     pf = run(raw, point=loader.point())
     print(stats(pf))
 
-    from project.Execution.replay import run_paper
     from project.Risk.position_sizing import SymbolSpec
     from project.Risk.risk_engine import RiskConfig
+    from research.backtest.replay import run_paper
 
     ind = MovingAvg(raw).compute_indicators()
     sig = MovingAvgLogic(ind, StrategyConfig(exit_mode="ema_cross"))()
