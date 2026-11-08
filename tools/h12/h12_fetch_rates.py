@@ -23,17 +23,21 @@ SERIES = {
     "NOK": "NO",
     "SEK": "SE",
     "USD": "US",
+    "USD*": "TB3MS",
 }
-URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=IR3TIB01{cc}M156N"
+URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={sid}"
 OUT = Path("data/h12/rates")
 EXPECTED = pd.date_range("2010-01-01", "2023-12-01", freq="MS")
 
+def sid_of(cc: str) -> str:
+    return cc if cc == "TB3MS" else f"IR3TIB01{cc}M156N"
 
 def check(ccy: str, cc: str) -> bool:
-    resp = httpx.get(URL.format(cc=cc), timeout=30, follow_redirects=True)
+    sid = sid_of(cc)
+    resp = httpx.get(URL.format(sid=sid), timeout=30, follow_redirects=True)
     resp.raise_for_status()
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / f"IR3TIB01{cc}M156N.csv").write_bytes(resp.content)
+    (OUT / f"{sid}.csv").write_bytes(resp.content)
     digest = hashlib.sha256(resp.content).hexdigest()[:16]
     df = pd.read_csv(io.BytesIO(resp.content), na_values=[".", ""])
     dates = pd.to_datetime(df.iloc[:, 0])
