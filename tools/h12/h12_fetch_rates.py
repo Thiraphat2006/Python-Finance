@@ -29,8 +29,10 @@ URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={sid}"
 OUT = Path("data/h12/rates")
 EXPECTED = pd.date_range("2010-01-01", "2023-12-01", freq="MS")
 
+
 def sid_of(cc: str) -> str:
     return cc if cc == "TB3MS" else f"IR3TIB01{cc}M156N"
+
 
 def check(ccy: str, cc: str) -> bool:
     sid = sid_of(cc)
