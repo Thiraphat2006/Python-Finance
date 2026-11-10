@@ -14,12 +14,18 @@ from project.Execution.capital_client import CapitalClient
 
 def make_client(
     payload: dict,
+    session_account_id: str | None = "acc-1",
 ) -> CapitalClient:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/session"):
-            return httpx.Response(
-                200, headers={"CST": "cst", "X-SECURITY-TOKEN": "token"}
+            if request.method == "POST":
+                return httpx.Response(
+                    200, headers={"CST": "cst", "X-SECURITY-TOKEN": "token"}
+                )
+            body = (
+                {} if session_account_id is None else {"accountId": session_account_id}
             )
+            return httpx.Response(200, json=body)
         return httpx.Response(200, json=payload)
 
     return CapitalClient(
@@ -51,8 +57,8 @@ def raw_position(
     return {"position": values, "market": {"epic": epic}}
 
 
-def broker(payload: dict) -> CapitalBroker:
-    return CapitalBroker(make_client(payload))
+def broker(payload: dict, session_account_id: str | None = "acc-1") -> CapitalBroker:
+    return CapitalBroker(make_client(payload, session_account_id))
 
 
 def test_open_positions_empty_list() -> None:
@@ -161,6 +167,7 @@ def test_account_values_ignore_account_type() -> None:
             "positions": [],
             "accounts": [
                 {
+                    "accountId": "acc-1",
                     "accountType": "CFD",
                     "balance": {
                         "available": 959.32,
@@ -178,9 +185,49 @@ def test_account_values_ignore_account_type() -> None:
 
 @pytest.mark.parametrize(
     "accounts",
-    [None, [], [{}], [{"balance": {"available": 1.0, "balance": 2.0}}]],
+    [
+        None,
+        [],
+        [{"accountId": "acc-1"}],
+        [{"accountId": "acc-1", "balance": {"available": 1.0, "balance": 2.0}}],
+    ],
 )
 def test_unexpected_account_shape_raises(accounts: object) -> None:
     b = broker({"positions": [], "accounts": accounts})
     with pytest.raises(CapitalBrokerError, match="accounts|balance"):
+        _ = b.cash
+
+
+def _two_accounts() -> dict:
+    def acc(account_id: str, value: float) -> dict:
+        return {
+            "accountId": account_id,
+            "balance": {
+                "balance": value,
+                "deposit": value,
+                "profitLoss": 0.0,
+                "available": value,
+            },
+        }
+
+    return {"positions": [], "accounts": [acc("acc-1", 999.8), acc("acc-2", 1000.06)]}
+
+
+def test_account_values_use_session_account_not_first() -> None:
+    second = broker(_two_accounts(), session_account_id="acc-2")
+    assert second.cash == 1000.06
+    assert second.equity() == 1000.06
+    first = broker(_two_accounts(), session_account_id="acc-1")
+    assert first.cash == 999.8
+
+
+def test_session_account_missing_from_accounts_raises() -> None:
+    b = broker(_two_accounts(), session_account_id="acc-9")
+    with pytest.raises(CapitalBrokerError, match="not found"):
+        _ = b.cash
+
+
+def test_session_without_account_id_raises() -> None:
+    b = broker(_two_accounts(), session_account_id=None)
+    with pytest.raises(CapitalBrokerError, match="accountId"):
         _ = b.cash

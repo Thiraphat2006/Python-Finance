@@ -62,6 +62,7 @@ class CapitalBroker:
         self._ticket: str | None = None
         self._log = logging.getLogger("autotrader")
         self._sleep = sleep
+        self._account_id: str | None = None
         self.sync()
 
     def fetch_positions(self) -> list[CapitalPosition]:
@@ -133,6 +134,22 @@ class CapitalBroker:
         )
         return note
 
+    def _select_account(self, accounts: list[Any]) -> dict[str, Any]:
+        if self._account_id is None:
+            account_id = self.client.get("/session").get("accountId")
+            if not isinstance(account_id, str) or not account_id:
+                raise CapitalBrokerError("Capital.com session has no accountId")
+            self._account_id = account_id
+        for account in accounts:
+            if (
+                isinstance(account, dict)
+                and account.get("accountId") == self._account_id
+            ):
+                return account
+        raise CapitalBrokerError(
+            "Capital.com account of the session not found in /accounts"
+        )
+
     def _account_values(self) -> tuple[float, float]:
         payload = self.client.get("/accounts")
         accounts = payload.get("accounts")
@@ -145,6 +162,7 @@ class CapitalBroker:
             raise CapitalBrokerError(
                 "Capital.com accounts response has an unexpected shape"
             )
+        account = self._select_account(accounts)
         balance = account.get("balance")
         if not isinstance(balance, dict):
             raise CapitalBrokerError(
